@@ -74,59 +74,80 @@ button{cursor:pointer}pre{white-space:pre-wrap;overflow:auto;max-height:300px}
 </main>
 
 <script>
-const $=id=>document.getElementById(id);
-async function get(url){const r=await fetch(url);if(!r.ok)throw new Error(await r.text());return r.json()}
+const $=id=>document.getElementById(id)
+const API_BASE=(window.FLEETAVAIL_API_BASE||'').replace(/\/$/,'')
+const api=url=>API_BASE+url
+async function get(url){
+  const r=await fetch(api(url))
+  if(!r.ok)throw new Error(await r.text())
+  return r.json()
+}
 function badge(state){return '<span class="badge '+state.toLowerCase()+'">'+state+'</span>'}
 function pct(v){return v==null?'—':(Number(v)*100).toFixed(1)+'%'}
 function renderKpis(s){
- $('kpis').innerHTML=[
- ['Availability',s.current_availability_pct+'%'],
- ['7-day projection',s.projected_7_day_availability_pct+'%'],
- ['Ready',s.ready+'/'+s.total_aircraft],
- ['Degraded',s.degraded],
- ['Critical',s.critical_aircraft]
- ].map(x=>'<div class="card"><div class="muted">'+x[0]+'</div><div class="kpi">'+x[1]+'</div></div>').join('')
+  $('kpis').innerHTML=[
+    ['Availability',s.current_availability_pct+'%'],
+    ['7-day projection',s.projected_7_day_availability_pct+'%'],
+    ['Ready',s.ready+'/'+s.total_aircraft],
+    ['Degraded',s.degraded],
+    ['Critical',s.critical_aircraft]
+  ].map(x=>'<div class="card"><div class="muted">'+x[0]+'</div><div class="kpi">'+x[1]+'</div></div>').join('')
 }
 function fillSelect(id,rows){
- $(id).innerHTML=rows.map(x=>'<option value="'+x.aircraft_id+'">'+x.aircraft_id+'</option>').join('')
+  const current=$(id).value
+  $(id).innerHTML=rows.map(x=>'<option value="'+x.aircraft_id+'">'+x.aircraft_id+'</option>').join('')
+  if(current && rows.some(x=>x.aircraft_id===current))$(id).value=current
 }
 async function loadFleet(){
- const [summary,rows,models,spares]=await Promise.all([
-  get('/api/fleet/summary'),get('/api/fleet/aircraft'),get('/api/models'),get('/api/spares')
- ])
- renderKpis(summary)
- $('fleet').innerHTML=rows.map(x=>{
-   const p=x.engine
-   return '<tr><td>'+x.aircraft_id+'</td><td>'+x.status+'</td><td>'+p.health_score+'</td><td>'+p.rul_cycles+'</td><td>'+pct(p.failure_probability)+'</td><td>'+pct(p.anomaly_score)+'</td><td>'+badge(p.operational_state)+'</td></tr>'
- }).join('')
- fillSelect('aircraftSelect',rows);fillSelect('whatAircraft',rows);fillSelect('maintAircraft',rows)
- $('models').innerHTML=Object.entries(models.branches||{}).map(([k,v])=>'<div class="model"><span>'+k.toUpperCase()+'</span><b>'+v.model+'</b></div>').join('')||'<div>No trained artifacts loaded</div>'
- $('mode').textContent='Runtime mode: '+models.mode
- $('spares').textContent=JSON.stringify(spares,null,2)
- await loadDetail()
+  const [summary,rows,models,spares]=await Promise.all([
+    get('/api/fleet/summary'),get('/api/fleet/aircraft'),get('/api/models'),get('/api/spares')
+  ])
+  renderKpis(summary)
+  $('fleet').innerHTML=rows.map(x=>{
+    const p=x.engine
+    return '<tr><td>'+x.aircraft_id+'</td><td>'+x.status+'</td><td>'+p.health_score+'</td><td>'+p.rul_cycles+'</td><td>'+pct(p.failure_probability)+'</td><td>'+pct(p.anomaly_score)+'</td><td>'+badge(p.operational_state)+'</td></tr>'
+  }).join('')
+  fillSelect('aircraftSelect',rows);fillSelect('whatAircraft',rows);fillSelect('maintAircraft',rows)
+  $('models').innerHTML=Object.entries(models.branches||{}).map(([k,v])=>'<div class="model"><span>'+k.toUpperCase()+'</span><b>'+v.model+'</b></div>').join('')||'<div>No trained artifacts loaded</div>'
+  $('mode').textContent='Runtime mode: '+models.mode
+  $('spares').textContent=JSON.stringify(spares,null,2)
+  await loadDetail()
 }
 async function loadDetail(){
- const id=$('aircraftSelect').value
- if(!id)return
- $('detail').textContent=JSON.stringify(await get('/api/fleet/aircraft/'+id),null,2)
+  const id=$('aircraftSelect').value
+  if(!id)return
+  $('detail').textContent=JSON.stringify(await get('/api/fleet/aircraft/'+id),null,2)
+}
+async function post(url,payload){
+  const r=await fetch(api(url),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+  if(!r.ok)throw new Error(await r.text())
+  return r.json()
 }
 async function simulate(){
- $('whatResult').textContent=JSON.stringify(await fetch(api('/api/simulate/what-if',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({aircraft_id:$('whatAircraft').value,component:'ENGINE',degradation_pct:+$('degradation').value})}).then(r=>r.json()),null,2)
+  try{
+    $('whatResult').textContent=JSON.stringify(await post('/api/simulate/what-if',{
+      aircraft_id:$('whatAircraft').value,component:'ENGINE',degradation_pct:+$('degradation').value
+    }),null,2)
+  }catch(e){$('whatResult').textContent=e.message}
 }
 async function recommend(){
- $('maintResult').textContent=JSON.stringify(await fetch(api('/api/maintenance/recommend',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({aircraft_id:$('maintAircraft').value,mission_priority:1})}).then(r=>r.json()),null,2)
+  try{
+    $('maintResult').textContent=JSON.stringify(await post('/api/maintenance/recommend',{
+      aircraft_id:$('maintAircraft').value,mission_priority:1
+    }),null,2)
+  }catch(e){$('maintResult').textContent=e.message}
 }
 function connect(){
- const base=API_BASE?new URL(API_BASE):location
- const protocol=base.protocol==='https:'?'wss':'ws'
- const socket=new WebSocket(protocol+'://'+base.host+base.pathname.replace(/\\/$/,'')+'/ws/telemetry')
- socket.onmessage=e=>{
-   const data=JSON.parse(e.data)
-   $('stream').textContent=JSON.stringify(data,null,2)
-   loadFleet().catch(console.error)
- }
- socket.onclose=()=>setTimeout(connect,1500)
- socket.onerror=()=>socket.close()
+  const base=API_BASE?new URL(API_BASE):location
+  const protocol=base.protocol==='https:'?'wss':'ws'
+  const socket=new WebSocket(protocol+'://'+base.host+base.pathname.replace(/\/$/,'')+'/ws/telemetry')
+  socket.onmessage=e=>{
+    const data=JSON.parse(e.data)
+    $('stream').textContent=JSON.stringify(data,null,2)
+    loadFleet().catch(console.error)
+  }
+  socket.onclose=()=>setTimeout(connect,1500)
+  socket.onerror=()=>socket.close()
 }
 $('aircraftSelect').addEventListener('change',loadDetail)
 loadFleet().catch(e=>{$('stream').textContent=e.message})
