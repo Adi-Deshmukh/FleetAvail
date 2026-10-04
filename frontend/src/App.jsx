@@ -158,6 +158,7 @@ export default function App() {
   const [selectedAircraft, setSelectedAircraft] = useState(DEFAULT_AIRCRAFT);
   const [aircraftOptions, setAircraftOptions] = useState([]);
   const wsRef = useRef(null);
+  const liveSignalRef = useRef(null);
 
   // Poll system health
   useEffect(() => {
@@ -192,6 +193,7 @@ export default function App() {
   useEffect(() => {
     setTelemetryHistory([]);
     setLastTelemetry(null);
+    liveSignalRef.current = null;
   }, [selectedAircraft]);
 
   // WebSocket connection for real-time telemetry stream
@@ -209,7 +211,24 @@ export default function App() {
         ws.onmessage = (event) => {
           try {
             const parsed = JSON.parse(event.data);
-            const enriched = { ...parsed, receivedAt: new Date().toLocaleTimeString() };
+            const previous = liveSignalRef.current;
+            const alpha = 0.20;
+            const smooth = (key, value) => {
+              const current = Number(value ?? 0);
+              return previous ? previous[key] + alpha * (current - previous[key]) : current;
+            };
+            const enriched = {
+              ...parsed,
+              display_health_score: smooth("health", parsed.health_score),
+              display_failure_probability: smooth("risk", parsed.failure_probability),
+              display_anomaly_score: smooth("anomaly", parsed.anomaly_score),
+              receivedAt: new Date().toLocaleTimeString(),
+            };
+            liveSignalRef.current = {
+              health: enriched.display_health_score,
+              risk: enriched.display_failure_probability,
+              anomaly: enriched.display_anomaly_score,
+            };
             setLastTelemetry(enriched);
             setTelemetryHistory((prev) => [enriched, ...prev.slice(0, 49)]);
           } catch (e) {
@@ -398,9 +417,9 @@ function OverviewPage({ lastTelemetry, telemetryHistory, selectedAircraft, aircr
       .map((item, idx) => ({
         idx: idx + 1,
         cycle: item.cycle,
-        health: Number(item.health_score || 0),
-        risk: Number(item.failure_probability || 0) * 100,
-        anomaly: Number(item.anomaly_score || 0) * 100,
+        health: Number(item.display_health_score ?? item.health_score ?? 0),
+        risk: Number(item.display_failure_probability ?? item.failure_probability ?? 0) * 100,
+        anomaly: Number(item.display_anomaly_score ?? item.anomaly_score ?? 0) * 100,
         state: item.health_level || "UNKNOWN",
       }));
   }, [telemetryHistory]);
@@ -523,7 +542,7 @@ function OverviewPage({ lastTelemetry, telemetryHistory, selectedAircraft, aircr
         {/* Live Streaming Sparkline */}
         <SectionCard
           title="Live Telemetry Health Signal"
-          subtitle={"Selected stream: " + selectedAircraft + " ENGINE · 1-second updates · same inference path as /api/predict"}
+          subtitle={"Selected stream: " + selectedAircraft + " ENGINE · 1-second updates · stabilized operator signal"}
           badge={lastTelemetry ? lastTelemetry.aircraft_id + " · CYCLE " + (lastTelemetry.cycle ?? "—") : "LISTENING"}
           action={
             <div className="telemetry-selector">
@@ -539,9 +558,9 @@ function OverviewPage({ lastTelemetry, telemetryHistory, selectedAircraft, aircr
           {sparklineData.length > 0 ? (
             <>
               <div className="telemetry-signal-grid">
-                <div><span>Health</span><strong>{fmt(lastTelemetry?.health_score)}</strong></div>
-                <div><span>Failure risk</span><strong>{pct(lastTelemetry?.failure_probability)}</strong></div>
-                <div><span>Anomaly</span><strong>{pct(lastTelemetry?.anomaly_score)}</strong></div>
+                <div><span>Health</span><strong>{fmt(lastTelemetry?.display_health_score ?? lastTelemetry?.health_score)}</strong></div>
+                <div><span>Failure risk</span><strong>{pct(lastTelemetry?.display_failure_probability ?? lastTelemetry?.failure_probability)}</strong></div>
+                <div><span>Anomaly</span><strong>{pct(lastTelemetry?.display_anomaly_score ?? lastTelemetry?.anomaly_score)}</strong></div>
                 <div><span>Operational state</span><strong>{lastTelemetry?.operational_state || lastTelemetry?.health_level || "—"}</strong></div>
               </div>
               <ChartContainer height={225}>
@@ -1342,8 +1361,8 @@ function MLModelsPage() {
             <div className="selection-body">
               <h4>Champion Model: {rulSel.loaded_model || "HistGradientBoostingRegressor"}</h4>
               <p>
-                Selected based on lowest Mean Absolute Error (MAE = 30.82 cycles) on the official NASA C-MAPSS test
-                dataset with unit-stratified cross-validation.
+                The champion is selected from the backend evaluation artifact by lowest FD001 test MAE.
+                LSTM and TCN remain evaluated candidates; only the selected RUL model is used for production RUL inference.
               </p>
               <div className="selection-specs">
                 <div className="spec-item">
@@ -1363,6 +1382,70 @@ function MLModelsPage() {
           </div>
         </SectionCard>
       </div>
+
+      <SectionCard
+        title="Production Inference Branches"
+        subtitle="Independent models used by the live inference pipeline"
+        badge="RUNTIME"
+      >
+        <div className="grid-3-cols">
+          {["rul", "failure", "anomaly"].map((key) => {
+            const item = modelsData?.production_branches?.[key];
+            const labels = {
+              rul: ["RUL", "Remaining Useful Life"],
+              failure: ["FAILURE RISK", "Probability of failure within the trained horizon"],
+              anomaly: ["ANOMALY", "Isolation Forest behavioral deviation"],
+            };
+            const [label, description] = labels[key];
+            return (
+              <div className="selection-card" key={key}>
+                <div className="selection-body">
+                  <span className="section-eyebrow">{label}</span>
+                  <h4>{item?.model || "Model unavailable"}</h4>
+                  <p>{description}</p>
+                  <Badge value={item?.status || "UNAVAILABLE"} />
+                  <div className="spec-item" style={{ marginTop: 12 }}>
+                    <span>ARTIFACT</span>
+                    <strong className="code-font">{item?.path || "—"}</strong>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        title="RUL Candidate Evaluation"
+        subtitle="All benchmarked candidates are visible here even when only one is active in production"
+        badge="EVALUATION"
+      >
+        <div className="table-responsive">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>MAE</th>
+                <th>RMSE</th>
+                <th>Role</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(modelsData?.evaluated_rul_models || []).map((item) => {
+                const champion = item.key === rulSel.selected;
+                return (
+                  <tr key={item.key}>
+                    <td><strong>{item.model}</strong></td>
+                    <td>{Number.isFinite(Number(item.mae)) ? fmt(item.mae, 2) : "—"} cycles</td>
+                    <td>{Number.isFinite(Number(item.rmse)) ? fmt(item.rmse, 2) : "—"} cycles</td>
+                    <td><Badge value={champion ? "CHAMPION" : "EVALUATED"} /></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
 
       {/* Loaded Model Artifacts */}
       <SectionCard title="Registered Model Artifacts" subtitle="Weights and pipelines currently loaded into memory">
@@ -1588,10 +1671,10 @@ function TelemetryPage({ telemetryHistory, wsConnected, selectedAircraft, aircra
     return [...telemetryHistory].reverse().map((item, i) => ({
       idx: i + 1,
       aircraft: item.aircraft_id,
-      health: item.health_score || 0,
+      health: item.display_health_score ?? item.health_score ?? 0,
       rul: item.rul_cycles || 0,
-      risk: (item.failure_probability || 0) * 100,
-      anomaly: (item.anomaly_score || 0) * 100,
+      risk: (item.display_failure_probability ?? item.failure_probability ?? 0) * 100,
+      anomaly: (item.display_anomaly_score ?? item.anomaly_score ?? 0) * 100,
     }));
   }, [telemetryHistory]);
 
