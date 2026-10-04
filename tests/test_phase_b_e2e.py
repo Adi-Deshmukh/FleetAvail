@@ -195,3 +195,12 @@ def test_websocket_telemetry_is_pinned_and_runs_inference():
     assert "anomaly_score" in first
     assert "prediction_status" in first
     assert second["cycle"] >= first["cycle"]
+
+
+def test_fleet_availability_reports_current_and_projected_blocks():
+    availability = client.get("/api/fleet/availability").json()
+    assert "current_blocked_aircraft" in availability
+    assert "projected_blocked_aircraft" in availability
+    assert set(availability["recovered_aircraft"]).isdisjoint(
+        set(availability["projected_blocked_aircraft"])
+    )
