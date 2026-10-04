@@ -9,7 +9,7 @@ usable while trained ML branches are added.
 | 1 | C-MAPSS baseline/provider | Turns a 30-cycle telemetry window into an RUL estimate | Keep the existing leakage-aware pipeline and expose the trained artifact through a provider boundary |
 | 2 | Telemetry sequence buffer | Maintains bounded per-aircraft/component history | **Implemented:** `ml/sequence_buffer.py` stores the latest 30 valid samples per aircraft/component, enforces cycle ordering, and exposes chronological NumPy windows. |
 | 3 | XGBoost failure model | Predicts near-term failure risk | **Implemented:** `ml/cmapss/failure_risk.py` defines the RUL-horizon label, engine-aware splits, XGBoost classifier, held-out sigmoid calibration, metrics, persistence and inference; `scripts/train_failure.py` and `scripts/predict_failure.py` provide reproducible commands. |
-| 4 | Isolation Forest | Detects abnormal operating behavior without complete anomaly labels | Train on normal-operation reference data; calibrate threshold and quality/OOD checks |
+| 4 | Isolation Forest | Detects abnormal operating behavior without complete anomaly labels | **Implemented:** `ml/cmapss/anomaly.py` trains on a normal-operation reference population, calibrates a threshold from normal scores, persists metadata, and remains independent of FastAPI/API integration. |
 | 5 | Health Fusion | Converts RUL, risk, anomaly, confidence and data quality into an operational state | Implement a typed HealthState and explicit NORMAL/WATCH/DEGRADED/CRITICAL rules |
 | 6 | LSTM/TCN RUL | Learns ordered degradation instead of summary-only windows | Train LSTM baseline, TCN alternative, compare against HistGradientBoosting |
 | 7 | Real-time ML inference | Runs all trained branches on incoming telemetry | Wire providers into FastAPI with cold-start fallback and model metadata |
@@ -33,7 +33,7 @@ not a claim that XGBoost/LSTM/TCN/Isolation Forest are already trained.
 2. Add the provider boundary and sequence-aware API contract. ✅
 3. Add the 30-cycle telemetry sequence buffer. ✅
 4. Add XGBoost failure-risk branch. ✅
-5. Add Isolation Forest as an independent branch.
+5. Add Isolation Forest as an independent branch. ✅
 6. Fuse the model outputs.
 7. Compare LSTM/TCN with the baseline before replacing the RUL branch.
 8. Persist the twin and then optimize maintenance/spares at fleet level.
