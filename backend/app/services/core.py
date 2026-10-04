@@ -226,24 +226,6 @@ class FleetService:
         )
         return state.to_dict()
 
-    def _sync_twin(
-        self,
-        aircraft_id: str,
-        component: str,
-        prediction: dict,
-        cycle: int,
-    ) -> None:
-        self.twin_store.apply_prediction(
-            aircraft_id,
-            component,
-            health_score=prediction["health_score"],
-            rul_cycles=prediction["rul_cycles"],
-            failure_probability=prediction["failure_probability"],
-            anomaly_score=prediction["anomaly_score"],
-            confidence=prediction["confidence"],
-            data_quality=prediction["data_quality"],
-            cycle=cycle,
-        )
 
     def fleet_summary(self):
         total = len(self.aircraft)
