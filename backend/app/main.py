@@ -4,7 +4,8 @@ import json
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse\nfrom fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from backend.app.services.core import FleetService
@@ -202,4 +203,3 @@ async def ws(socket: WebSocket):
             await asyncio.sleep(1)
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
-\n\n@app.get("/{full_path:path}")\ndef frontend_spa(full_path: str):\n    """Serve Vite SPA routes without intercepting API or WebSocket paths."""\n    if full_path.startswith(("api/", "api", "health", "ws")):\n        raise HTTPException(status_code=404, detail="Not found")\n    dist_index = FRONTEND_DIST / "index.html"\n    if dist_index.exists():\n        return FileResponse(dist_index)\n    raise HTTPException(status_code=404, detail="Not found")\n
