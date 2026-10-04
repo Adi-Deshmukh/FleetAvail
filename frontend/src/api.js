@@ -20,7 +20,7 @@ export async function apiPost(path, body) {
   return res.json();
 }
 
-export function websocketUrl() {
+export function websocketUrl(aircraftId = "AF-001") {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${window.location.host}/ws/telemetry`;
+  return `${proto}//${window.location.host}/ws/telemetry?aircraft_id=${encodeURIComponent(aircraftId)}`;
 }
