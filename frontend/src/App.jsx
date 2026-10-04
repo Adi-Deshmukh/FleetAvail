@@ -574,7 +574,7 @@ function OverviewPage({ lastTelemetry, telemetryHistory }) {
                     </td>
                     <td>{fmt(r.rul, 0)} cyc</td>
                     <td>
-                      <span className={cls("risk-badge", r.risk > 40 ? "high" : r.risk > 20 ? "med" : "low")}>
+                      <span className={cls("risk-badge", r.risk >= 60 ? "high" : r.risk >= 30 ? "med" : "low")}>
                         {fmt(r.risk)}%
                       </span>
                     </td>
@@ -857,7 +857,7 @@ function FleetMonitorPage() {
                         <strong>{fmt(e.rul_cycles, 0)}</strong> cyc
                       </td>
                       <td>
-                        <span className={cls("risk-badge", (e.failure_probability || 0) > 0.4 ? "high" : "low")}>
+                        <span className={cls("risk-badge", (e.failure_probability || 0) >= 0.6 ? "high" : (e.failure_probability || 0) >= 0.3 ? "med" : "low")}>
                           {pct(e.failure_probability)}
                         </span>
                       </td>
