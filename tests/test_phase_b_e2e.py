@@ -204,3 +204,20 @@ def test_fleet_availability_reports_current_and_projected_blocks():
     assert set(availability["recovered_aircraft"]).isdisjoint(
         set(availability["projected_blocked_aircraft"])
     )
+
+
+def test_aircraft_detail_mission_status_matches_operational_state():
+    aircraft = main_module.service.aircraft["AF-003"]
+    aircraft.status = "READY"
+    aircraft.components["ENGINE"].update({
+        "health": 0.40,
+        "risk": 0.74,
+        "anomaly": 0.60,
+        "rul": 73.0,
+    })
+
+    detail = client.get("/api/fleet/aircraft/AF-003").json()
+    assert detail["status"] == "DEGRADED"
+    assert detail["twin_state"]["mission_status"] == "DEGRADED"
+    assert detail["components"]["ENGINE"]["health_level"] == "DEGRADED"
+    assert "ELEVATED_FAILURE_RISK" in detail["components"]["ENGINE"]["reason_codes"]
