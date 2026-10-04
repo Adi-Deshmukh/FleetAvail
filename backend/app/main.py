@@ -130,10 +130,10 @@ def execute_maintenance(aircraft_id: str, x: MaintenanceExecution):
 
 @app.post("/api/predict")
 def predict(x: PredictionRequest):
+    if x.aircraft_id not in service.aircraft:
+        raise HTTPException(status_code=404, detail="Aircraft not found")
     try:
         return service.predict(x.aircraft_id, x.component.upper(), x.telemetry)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Aircraft not found")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
