@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import os
 import random
+import time
 from pathlib import Path
 
 from decision_engine.fleet_availability import (
@@ -21,6 +22,7 @@ from decision_engine.spares import (
 from digital_twin.state import DigitalTwinStore
 from ml.cmapss.runtime import CMapssModelRuntime, RAW_FEATURES
 from ml.health import fuse_health_state
+from ml.observability import PredictionObservability, PHASE_C_VERSION
 
 COMPONENTS = ("ENGINE", "HYDRAULIC", "ELECTRICAL", "LANDING_GEAR")
 PARTS = {
@@ -58,6 +60,7 @@ class FleetService:
             rul_architecture=os.getenv("FLEETAVAIL_RUL_MODEL", "auto").lower(),
         )
         self.latest_predictions: dict[tuple[str, str], dict] = {}
+        self.observability = PredictionObservability()
         self.replay_rows: dict[str, list[dict]] = {}
         self.replay_index: dict[str, int] = {}
 
@@ -223,6 +226,8 @@ class FleetService:
             "aircraft_count": len(self.aircraft),
             "mode": self.runtime.mode,
             "models": self.runtime.model_status,
+            "observability": self.observability.metrics(),
+            "phase_c_version": PHASE_C_VERSION,
             "decision_layers": [
                 "health_fusion",
                 "digital_twin",
@@ -230,6 +235,13 @@ class FleetService:
                 "spare_allocation",
                 "fleet_availability",
             ],
+        }
+
+    def observability_status(self):
+        return {
+            "phase_c_version": PHASE_C_VERSION,
+            "metrics": self.observability.metrics(),
+            "latest_audits": self.observability.audit_records(20),
         }
 
     def fused(self, aircraft: Aircraft, component: str) -> dict:
@@ -246,97 +258,104 @@ class FleetService:
         )
         return state.to_dict()
 
-
-    def fleet_summary(self):
-        total = len(self.aircraft)
-        ready = sum(a.status == "READY" for a in self.aircraft.values())
-        degraded = sum(a.status == "DEGRADED" for a in self.aircraft.values())
-        maint = sum(a.status == "MAINTENANCE" for a in self.aircraft.values())
-        critical = sum(
-            self.fused(a, "ENGINE")["health_level"] == "CRITICAL"
-            for a in self.aircraft.values()
-        )
-        availability = self.fleet_availability()
-        return {
-            "total_aircraft": total,
-            "ready": ready,
-            "degraded": degraded,
-            "maintenance": maint,
-            "critical_aircraft": critical,
-            "current_availability_pct": availability["current_availability_pct"],
-            "projected_7_day_availability_pct": availability["projected_availability_pct"],
-        }
-
-    def aircraft_list(self):
-        return [
-            {
-                "aircraft_id": aircraft.id,
-                "status": aircraft.status,
-                "engine": self.fused(aircraft, "ENGINE"),
-            }
-            for aircraft in self.aircraft.values()
-        ]
-
-    def aircraft_detail(self, aircraft_id):
-        aircraft = self.aircraft[aircraft_id]
-        return {
-            "aircraft_id": aircraft_id,
-            "status": aircraft.status,
-            "components": {
-                component: self.fused(aircraft, component)
-                for component in COMPONENTS
-            },
-            "twin_state": self.twin_store.snapshot(aircraft_id),
-        }
-
     def predict(self, aid, component, telemetry):
         if aid not in self.aircraft:
             raise KeyError(aid)
         if component not in COMPONENTS:
             raise ValueError(f"Unsupported component: {component}")
 
-        if component == "ENGINE":
+        if component != "ENGINE":
+            x = self.aircraft[aid].components[component]
+            if telemetry:
+                x["health"] = max(.05, min(.99, x["health"] - .02))
+                x["anomaly"] = 1 - x["health"]
+                x["risk"] = max(.01, min(.99, 1 - x["health"]))
+            prediction = self.fused(self.aircraft[aid], component)
             twin = self.twin_store.get_or_create(aid)
             existing = twin.components.get(component)
             default_cycle = existing.last_update_cycle + 1 if existing else 1
             cycle = int((telemetry or {}).get("cycle", default_cycle))
-            prediction = self.runtime.predict(
-                aid,
-                component,
-                telemetry or {},
+            self._sync_twin(
+                aid, component,
+                {
+                    "health_score": prediction["health_score"],
+                    "rul_cycles": prediction["rul_cycles"],
+                    "failure_probability": prediction["failure_probability"],
+                    "anomaly_score": prediction["anomaly_score"],
+                    "confidence": prediction["confidence"],
+                    "data_quality": prediction["data_quality"],
+                },
                 cycle=cycle,
             )
-            self.latest_predictions[(aid, component)] = prediction
-            self._apply_prediction(aid, component, prediction, cycle=cycle)
-            return {
-                **self.fused(self.aircraft[aid], component),
-                "inference": prediction,
-            }
+            return prediction
 
-        x = self.aircraft[aid].components[component]
-        if telemetry:
-            x["health"] = max(.05, min(.99, x["health"] - .02))
-            x["anomaly"] = 1 - x["health"]
-            x["risk"] = max(.01, min(.99, 1 - x["health"]))
-        prediction = self.fused(self.aircraft[aid], component)
         twin = self.twin_store.get_or_create(aid)
         existing = twin.components.get(component)
         default_cycle = existing.last_update_cycle + 1 if existing else 1
         cycle = int((telemetry or {}).get("cycle", default_cycle))
-        self._sync_twin(
-            aid,
-            component,
-            {
-                "health_score": prediction["health_score"],
-                "rul_cycles": prediction["rul_cycles"],
-                "failure_probability": prediction["failure_probability"],
-                "anomaly_score": prediction["anomaly_score"],
-                "confidence": prediction["confidence"],
-                "data_quality": prediction["data_quality"],
-            },
-            cycle=cycle,
-        )
-        return prediction
+        started = time.perf_counter()
+        quality = self.observability.input_quality(telemetry or {})
+        try:
+            inference = self.runtime.predict(aid, component, telemetry or {}, cycle=cycle)
+            self.latest_predictions[(aid, component)] = inference
+            self._apply_prediction(aid, component, inference, cycle=cycle)
+
+            state = self.fused(self.aircraft[aid], component)
+            history = list(self.runtime.histories[(aid, component)])
+            explanation = self.observability.explain(
+                telemetry or {},
+                history=history,
+                failure_probability=state["failure_probability"],
+                rul_cycles=state["rul_cycles"],
+                anomaly_score=state["anomaly_score"],
+            )
+            drift = self.observability.drift(
+                aid, component, telemetry or {},
+                history=history,
+                failure_probability=state["failure_probability"],
+                rul_cycles=state["rul_cycles"],
+            )
+            status = inference.get("prediction_status", "READY")
+            latency_ms = (time.perf_counter() - started) * 1000.0
+            provenance = {
+                "phase_c_version": PHASE_C_VERSION,
+                "dataset": "NASA C-MAPSS FD001",
+                "runtime_mode": self.runtime.mode,
+                "rul": self.runtime.model_status["rul_selection"],
+                "branches": self.runtime.model_status["branches"],
+                "window_size": self.runtime.window_size,
+            }
+            self.observability.record(
+                aircraft_id=aid, component=component, cycle=cycle,
+                telemetry_quality=quality, prediction={**state, **inference},
+                provenance=provenance, latency_ms=latency_ms, status=status,
+                explanation=explanation, drift=drift,
+            )
+            return {
+                **state,
+                "inference": inference,
+                "provenance": provenance,
+                "observability": {
+                    "latency_ms": round(latency_ms, 3),
+                    "prediction_status": status,
+                    "input_quality": quality,
+                    "drift": drift,
+                    "explanation": explanation,
+                },
+            }
+        except Exception as exc:
+            latency_ms = (time.perf_counter() - started) * 1000.0
+            self.observability.record(
+                aircraft_id=aid, component=component, cycle=cycle,
+                telemetry_quality=quality, prediction={},
+                provenance={
+                    "phase_c_version": PHASE_C_VERSION,
+                    "dataset": "NASA C-MAPSS FD001",
+                    "runtime_mode": self.runtime.mode,
+                },
+                latency_ms=latency_ms, status="ERROR", error=str(exc),
+            )
+            raise
 
     def what_if(self, aircraft_id, component, percentage):
         baseline = self.fused(self.aircraft[aircraft_id], component)
