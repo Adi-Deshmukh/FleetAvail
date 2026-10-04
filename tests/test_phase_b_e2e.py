@@ -206,6 +206,35 @@ def test_fleet_availability_reports_current_and_projected_blocks():
     )
 
 
+def test_prediction_sync_derives_twin_health_from_fused_state():
+    service = main_module.service
+    service._apply_prediction(
+        "AF-001",
+        "ENGINE",
+        {
+            "rul_cycles": 73.0,
+            "failure_probability": 0.74,
+            "anomaly_score": 0.60,
+            "confidence": 0.80,
+            "data_quality": 1.0,
+            "model_mode": "ml",
+            "model_version": "TEST",
+            "window_ready": True,
+        },
+        cycle=73,
+    )
+
+    fused = service.fused(service.aircraft["AF-001"], "ENGINE")
+    twin = service.twin_store.snapshot("AF-001")
+    twin_engine = twin["components"]["ENGINE"]
+
+    assert twin_engine["health"] == fused["health_score"] / 100.0
+    assert twin_engine["failure_probability"] == fused["failure_probability"]
+    assert twin_engine["anomaly_score"] == fused["anomaly_score"]
+    assert twin_engine["rul_cycles"] == fused["rul_cycles"]
+    assert twin["mission_status"] == "DEGRADED"
+
+
 def test_aircraft_detail_mission_status_matches_operational_state():
     aircraft = main_module.service.aircraft["AF-003"]
     aircraft.status = "READY"
