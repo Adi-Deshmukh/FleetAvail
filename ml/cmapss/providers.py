@@ -81,4 +81,5 @@ class FusedPredictionProvider:
             anomaly_score=fused["anomaly_score"],
             confidence=confidence,
             data_quality=fused["data_quality"],
+            model_version=version,
         )
