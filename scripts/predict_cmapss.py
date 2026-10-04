@@ -10,8 +10,9 @@ def main():
  _,test,_=load_cmapss(Path(a.raw_dir),a.subset)
  test=clean(test)
  features=model.feature_columns
- test=test[[c for c in ["unit_id","cycle","rul"]+features if c in test.columns]]
- test=add_temporal_features(test,[c for c in features if "_delta" not in c and "_ma" not in c])
+ raw_features=[c for c in features if "_delta" not in c and "_ma" not in c]
+ test=test[["unit_id","cycle","rul"]+raw_features]
+ test=add_temporal_features(test,raw_features)
  test=transform(test,features,model.scaler)
  X,units=last_sequences(test,features,model.window_size)
  preds=model.predict(X)
