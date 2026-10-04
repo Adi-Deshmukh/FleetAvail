@@ -502,6 +502,20 @@ function OverviewPage({ lastTelemetry, telemetryHistory, selectedAircraft, aircr
                   <span className="legend-val">{d.value}</span>
                 </div>
               ))}
+              <div className="fleet-state-summary">
+                <div>
+                  <span>READY RATE</span>
+                  <strong>{summary?.total_aircraft ? fmt((summary.ready / summary.total_aircraft) * 100) : "—"}%</strong>
+                </div>
+                <div>
+                  <span>BLOCKED NOW</span>
+                  <strong>{availability?.current_blocked_aircraft?.length ?? 0}</strong>
+                </div>
+                <div>
+                  <span>7-DAY AVAILABILITY</span>
+                  <strong>{fmt(summary?.projected_7_day_availability_pct)}%</strong>
+                </div>
+              </div>
             </div>
           </div>
         </SectionCard>
@@ -530,20 +544,34 @@ function OverviewPage({ lastTelemetry, telemetryHistory, selectedAircraft, aircr
                 <div><span>Anomaly</span><strong>{pct(lastTelemetry?.anomaly_score)}</strong></div>
                 <div><span>Operational state</span><strong>{lastTelemetry?.operational_state || lastTelemetry?.health_level || "—"}</strong></div>
               </div>
-              <ChartContainer height={210}>
-                <LineChart data={sparklineData}>
+              <ChartContainer height={225}>
+                <AreaChart data={sparklineData} margin={{ top: 8, right: 8, left: -18, bottom: 4 }}>
+                  <defs>
+                    <linearGradient id="overviewHealthWave" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#48d597" stopOpacity={0.34} />
+                      <stop offset="100%" stopColor="#48d597" stopOpacity={0.02} />
+                    </linearGradient>
+                    <linearGradient id="overviewRiskWave" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#ff6b7a" stopOpacity={0.30} />
+                      <stop offset="100%" stopColor="#ff6b7a" stopOpacity={0.02} />
+                    </linearGradient>
+                    <linearGradient id="overviewAnomalyWave" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f2a05f" stopOpacity={0.28} />
+                      <stop offset="100%" stopColor="#f2a05f" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#16293d" vertical={false} />
-                  <XAxis dataKey="cycle" stroke="#5d758f" />
-                  <YAxis domain={[0, 100]} stroke="#5d758f" />
+                  <XAxis dataKey="cycle" stroke="#5d758f" tick={{ fontSize: 10 }} />
+                  <YAxis domain={[0, 100]} stroke="#5d758f" tick={{ fontSize: 10 }} />
                   <Tooltip
                     contentStyle={{ background: "#0d1d2e", border: "1px solid #1c3046", borderRadius: "6px" }}
                     formatter={(value, name) => [fmt(value) + "%", name]}
                   />
                   <Legend />
-                  <Line type="monotone" dataKey="health" stroke="#48d597" strokeWidth={2} dot={false} name="Health %" />
-                  <Line type="monotone" dataKey="risk" stroke="#ff6b7a" strokeWidth={2} dot={false} name="Failure Risk %" />
-                  <Line type="monotone" dataKey="anomaly" stroke="#f2a05f" strokeWidth={2} dot={false} name="Anomaly %" />
-                </LineChart>
+                  <Area type="monotone" dataKey="health" stroke="#48d597" strokeWidth={2} fill="url(#overviewHealthWave)" dot={false} name="Health %" />
+                  <Area type="monotone" dataKey="risk" stroke="#ff6b7a" strokeWidth={2} fill="url(#overviewRiskWave)" dot={false} name="Failure Risk %" />
+                  <Area type="monotone" dataKey="anomaly" stroke="#f2a05f" strokeWidth={2} fill="url(#overviewAnomalyWave)" dot={false} name="Anomaly %" />
+                </AreaChart>
               </ChartContainer>
               <p className="telemetry-signal-note">
                 Health is the fused score. Failure risk is the model probability of failure. Anomaly is the normalized anomaly signal.
@@ -776,12 +804,6 @@ function FleetMonitorPage() {
               <Bar dataKey="rul" fill="#4fa8e8" radius={[4, 4, 0, 0]} name="RUL Cycles" />
             </BarChart>
           </ChartContainer>
-          ) : (
-            <div className="state-empty" style={{ height: 280 }}>
-              <Database size={24} className="accent-icon" />
-              <p>Benchmark artifact unavailable. No model comparison values are displayed.</p>
-            </div>
-          )}
         </SectionCard>
 
         <SectionCard
@@ -1569,6 +1591,7 @@ function TelemetryPage({ telemetryHistory, wsConnected, selectedAircraft, aircra
       health: item.health_score || 0,
       rul: item.rul_cycles || 0,
       risk: (item.failure_probability || 0) * 100,
+      anomaly: (item.anomaly_score || 0) * 100,
     }));
   }, [telemetryHistory]);
 
@@ -1599,26 +1622,33 @@ function TelemetryPage({ telemetryHistory, wsConnected, selectedAircraft, aircra
         title="Streaming Multi-Cycle Fused Health Progression"
         subtitle="Last 50 consecutive telemetry frames parsed in real-time"
       >
-        <ChartContainer height={300}>
+        <ChartContainer height={320}>
           <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 10 }}>
             <defs>
-              <linearGradient id="telemetryGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#4fa8e8" stopOpacity={0.4} />
-                <stop offset="95%" stopColor="#4fa8e8" stopOpacity={0.0} />
+              <linearGradient id="telemetryHealthWave" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#48d597" stopOpacity={0.34} />
+                <stop offset="100%" stopColor="#48d597" stopOpacity={0.02} />
+              </linearGradient>
+              <linearGradient id="telemetryRiskWave" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#ff6b7a" stopOpacity={0.30} />
+                <stop offset="100%" stopColor="#ff6b7a" stopOpacity={0.02} />
+              </linearGradient>
+              <linearGradient id="telemetryAnomalyWave" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#f2a05f" stopOpacity={0.28} />
+                <stop offset="100%" stopColor="#f2a05f" stopOpacity={0.02} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#16293d" vertical={false} />
             <XAxis dataKey="idx" stroke="#5d758f" />
-            <YAxis domain={[40, 100]} stroke="#5d758f" />
-            <Tooltip contentStyle={{ background: "#0d1d2e", border: "1px solid #1c3046", borderRadius: "6px" }} />
-            <Area
-              type="monotone"
-              dataKey="health"
-              stroke="#4fa8e8"
-              strokeWidth={2}
-              fill="url(#telemetryGrad)"
-              name="Health Score"
+            <YAxis domain={[0, 100]} stroke="#5d758f" />
+            <Tooltip
+              contentStyle={{ background: "#0d1d2e", border: "1px solid #1c3046", borderRadius: "6px" }}
+              formatter={(value, name) => [fmt(value) + "%", name]}
             />
+            <Legend />
+            <Area type="monotone" dataKey="health" stroke="#48d597" strokeWidth={2.5} fill="url(#telemetryHealthWave)" name="Health %" />
+            <Area type="monotone" dataKey="risk" stroke="#ff6b7a" strokeWidth={2.5} fill="url(#telemetryRiskWave)" name="Failure Risk %" />
+            <Area type="monotone" dataKey="anomaly" stroke="#f2a05f" strokeWidth={2.5} fill="url(#telemetryAnomalyWave)" name="Anomaly %" />
           </AreaChart>
         </ChartContainer>
       </SectionCard>
