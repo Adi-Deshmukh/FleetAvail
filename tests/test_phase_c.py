@@ -45,7 +45,7 @@ def test_audit_metrics_and_drift_contract():
     assert len(obs.audit_records()) == 1
 
 
-def test_api_exposes_phase_c_observability_contract(tmp_path):
+def test_api_exposes_phase_c_observability_contract(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     import backend.app.main as main_module
     from backend.app.services.core import FleetService
