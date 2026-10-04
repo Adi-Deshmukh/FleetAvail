@@ -111,14 +111,15 @@ async function loadDetail(){
  $('detail').textContent=JSON.stringify(await get('/api/fleet/aircraft/'+id),null,2)
 }
 async function simulate(){
- $('whatResult').textContent=JSON.stringify(await fetch('/api/simulate/what-if',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({aircraft_id:$('whatAircraft').value,component:'ENGINE',degradation_pct:+$('degradation').value})}).then(r=>r.json()),null,2)
+ $('whatResult').textContent=JSON.stringify(await fetch(api('/api/simulate/what-if',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({aircraft_id:$('whatAircraft').value,component:'ENGINE',degradation_pct:+$('degradation').value})}).then(r=>r.json()),null,2)
 }
 async function recommend(){
- $('maintResult').textContent=JSON.stringify(await fetch('/api/maintenance/recommend',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({aircraft_id:$('maintAircraft').value,mission_priority:1})}).then(r=>r.json()),null,2)
+ $('maintResult').textContent=JSON.stringify(await fetch(api('/api/maintenance/recommend',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({aircraft_id:$('maintAircraft').value,mission_priority:1})}).then(r=>r.json()),null,2)
 }
 function connect(){
- const protocol=location.protocol==='https:'?'wss':'ws'
- const socket=new WebSocket(protocol+'://'+location.host+'/ws/telemetry')
+ const base=API_BASE?new URL(API_BASE):location
+ const protocol=base.protocol==='https:'?'wss':'ws'
+ const socket=new WebSocket(protocol+'://'+base.host+base.pathname.replace(/\\/$/,'')+'/ws/telemetry')
  socket.onmessage=e=>{
    const data=JSON.parse(e.data)
    $('stream').textContent=JSON.stringify(data,null,2)
