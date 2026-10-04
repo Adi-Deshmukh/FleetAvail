@@ -69,6 +69,19 @@ def models():
     return service.runtime.model_status
 
 
+@app.get("/api/observability")
+def observability():
+    return service.observability_status()
+
+
+@app.get("/api/audit")
+def audit(limit: int = 50):
+    return {
+        "count": min(max(limit, 1), 500),
+        "records": service.observability.audit_records(limit),
+    }
+
+
 @app.get("/api/fleet/summary")
 def summary():
     return service.fleet_summary()
