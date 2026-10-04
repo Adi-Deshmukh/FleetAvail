@@ -1288,17 +1288,23 @@ function MLModelsPage() {
           badge="FD001 EVALUATION"
         >
           {benchmarkChart.length > 0 ? (
-          <ChartContainer height={280}>
-            <BarChart data={benchmarkChart} margin={{ top: 15, right: 15, left: -15, bottom: 15 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#16293d" vertical={false} />
-              <XAxis dataKey="model" stroke="#5d758f" />
-              <YAxis stroke="#5d758f" />
-              <Tooltip contentStyle={{ background: "#0d1d2e", border: "1px solid #1c3046", borderRadius: "6px" }} />
-              <Legend />
-              <Bar dataKey="MAE" fill="#4fa8e8" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="RMSE" fill="#f2a05f" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ChartContainer>
+            <ChartContainer height={280}>
+              <BarChart data={benchmarkChart} margin={{ top: 15, right: 15, left: -15, bottom: 15 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#16293d" vertical={false} />
+                <XAxis dataKey="model" stroke="#5d758f" />
+                <YAxis stroke="#5d758f" />
+                <Tooltip contentStyle={{ background: "#0d1d2e", border: "1px solid #1c3046", borderRadius: "6px" }} />
+                <Legend />
+                <Bar dataKey="MAE" fill="#4fa8e8" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="RMSE" fill="#f2a05f" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ChartContainer>
+          ) : (
+            <div className="state-empty" style={{ height: 280 }}>
+              <Database size={24} className="accent-icon" />
+              <p>Benchmark artifact unavailable. No model comparison values are displayed.</p>
+            </div>
+          )}
         </SectionCard>
 
         {/* Model Selection Decision Engine */}
