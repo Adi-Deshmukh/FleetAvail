@@ -5,10 +5,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import pandas as pd
-
 from ml.cmapss.data import load_cmapss
-from ml.cmapss.failure import XGBoostFailureRiskModel, add_failure_label
+from ml.cmapss.failure_risk import XGBoostFailureRiskModel, add_failure_label
 from ml.cmapss.features import add_temporal_features, clean
 
 
@@ -28,7 +26,7 @@ def main():
     model = XGBoostFailureRiskModel.load(model_path)
 
     _, raw_test = load_cmapss(Path(args.raw_dir), args.subset)
-    base_features = list(model.metadata.get("base_features", []))
+    base_features = list((model.metadata or {}).get("base_features", []))
     if not base_features:
         raise ValueError("Model metadata does not contain base_features")
 
@@ -47,13 +45,16 @@ def main():
         threshold=args.threshold,
     )
 
-    terminal = test.sort_values(["unit_id", "cycle"]).groupby(
-        "unit_id", sort=True
-    ).tail(1).copy()
+    terminal = (
+        test.sort_values(["unit_id", "cycle"])
+        .groupby("unit_id", sort=True)
+        .tail(1)
+        .copy()
+    )
     terminal["failure_probability"] = probabilities[terminal.index]
+    cutoff = model.threshold if args.threshold is None else args.threshold
     terminal["predicted_failure"] = (
-        terminal["failure_probability"]
-        >= (model.threshold if args.threshold is None else args.threshold)
+        terminal["failure_probability"] >= cutoff
     ).astype(int)
 
     rows = [
@@ -67,12 +68,17 @@ def main():
         for row in terminal.itertuples()
     ]
 
-    print(json.dumps({
-        "model": str(model_path),
-        "horizon_cycles": model.horizon,
-        "metrics": metrics,
-        "terminal_engine_predictions": rows,
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "model": str(model_path),
+                "horizon_cycles": model.horizon,
+                "metrics": metrics,
+                "terminal_engine_predictions": rows,
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":
