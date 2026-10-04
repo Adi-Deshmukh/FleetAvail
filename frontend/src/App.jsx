@@ -1388,7 +1388,7 @@ function MLModelsPage() {
         subtitle="Independent models used by the live inference pipeline"
         badge="RUNTIME"
       >
-        <div className="grid-3-cols">
+        <div className="grid-2-cols">
           {["rul", "failure", "anomaly"].map((key) => {
             const item = modelsData?.production_branches?.[key];
             const labels = {
