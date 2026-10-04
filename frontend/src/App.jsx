@@ -1014,7 +1014,7 @@ function AircraftDetailPage() {
         <StatCard
           title="Aircraft Status"
           value={data?.status || "UNKNOWN"}
-          detail={`Mission status: ${twin.mission_status || "ACTIVE"}`}
+          detail={`Mission status: ${twin.mission_status || data?.status || "UNKNOWN"}`}
           icon={Plane}
           tone={data?.status === "READY" ? "good" : "bad"}
         />
