@@ -198,17 +198,21 @@ export default function App() {
 
   // WebSocket connection for real-time telemetry stream
   useEffect(() => {
+    let active = true;
     let reconnectTimer;
     const connect = () => {
+      if (!active) return;
       try {
         const ws = new WebSocket(websocketUrl(selectedAircraft));
         wsRef.current = ws;
 
         ws.onopen = () => {
+          if (!active) return;
           setWsConnected(true);
         };
 
         ws.onmessage = (event) => {
+          if (!active) return;
           try {
             const parsed = JSON.parse(event.data);
             const previous = liveSignalRef.current;
@@ -237,15 +241,18 @@ export default function App() {
         };
 
         ws.onclose = () => {
+          if (!active) return;
           setWsConnected(false);
           reconnectTimer = setTimeout(connect, 3000);
         };
 
         ws.onerror = () => {
+          if (!active) return;
           setWsConnected(false);
           ws.close();
         };
       } catch (err) {
+        if (!active) return;
         setWsConnected(false);
         reconnectTimer = setTimeout(connect, 4000);
       }
@@ -254,6 +261,7 @@ export default function App() {
     connect();
 
     return () => {
+      active = false;
       clearTimeout(reconnectTimer);
       if (wsRef.current) wsRef.current.close();
     };
@@ -1745,7 +1753,7 @@ function TelemetryPage({ telemetryHistory, wsConnected, selectedAircraft, aircra
       {/* Raw Event Stream Table */}
       <SectionCard
         title="Real-time Telemetry Event Feed"
-        subtitle={`Selected stream: ${selectedAircraft} ENGINE · rolling event buffer`}
+        subtitle={`Selected stream: ${selectedAircraft} ENGINE · timestamped event buffer`}
         badge={`${selectedStreamHistory.length} EVENTS RETAINED`}
       >
         <div className="table-responsive">
