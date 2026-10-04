@@ -68,6 +68,7 @@ class CMapssModelRuntime:
         self.rul_comparison = None
         self.rul_selection_reason = "not_loaded"
         self.rul_load_error = None
+        self.branch_load_errors: dict[str, str] = {}
         self._load_branches()
 
     def _comparison_path(self) -> Path:
@@ -158,6 +159,46 @@ class CMapssModelRuntime:
                 except Exception:
                     self.rul_load_error = "Unable to load baseline RUL artifact"
 
+        # RUL is selected from the benchmark tournament; failure risk and
+        # anomaly are independent production branches loaded from trained artifacts.
+        self._load_independent_branch(
+            "failure",
+            self.model_dir / "fd001_failure.joblib",
+            XGBoostFailureRiskModel,
+            "XGBOOST_FAILURE_RISK",
+        )
+        self._load_independent_branch(
+            "anomaly",
+            self.model_dir / "fd001_isolation_forest.joblib",
+            IsolationForestAnomalyModel,
+            "ISOLATION_FOREST_ANOMALY",
+        )
+
+    def _load_independent_branch(
+        self,
+        key: str,
+        path: Path,
+        expected_type: type,
+        display_name: str,
+    ) -> None:
+        meta_path = path.with_suffix(".json")
+        if not path.exists():
+            self.branch_load_errors[key] = f"Missing artifact: {path}"
+            return
+        try:
+            model = expected_type.load(path)
+            metadata = self._read_json(meta_path) if meta_path.exists() else {}
+            if not metadata and getattr(model, "metadata", None):
+                metadata = dict(model.metadata)
+            self.branches[key] = LoadedBranch(
+                display_name,
+                model,
+                metadata,
+                str(path),
+            )
+        except Exception as exc:
+            self.branch_load_errors[key] = f"Unable to load {key} artifact: {type(exc).__name__}"
+
     @staticmethod
     def _read_json(path: Path) -> dict[str, Any]:
         import json
@@ -170,6 +211,41 @@ class CMapssModelRuntime:
 
     @property
     def model_status(self) -> dict[str, Any]:
+        expected = {
+            "rul": {
+                "role": "remaining_useful_life",
+                "artifact": str(self.model_dir / "fd001_rul.joblib"),
+                "loaded": "rul" in self.branches,
+            },
+            "failure": {
+                "role": "failure_risk",
+                "artifact": str(self.model_dir / "fd001_failure.joblib"),
+                "loaded": "failure" in self.branches,
+            },
+            "anomaly": {
+                "role": "anomaly_detection",
+                "artifact": str(self.model_dir / "fd001_isolation_forest.joblib"),
+                "loaded": "anomaly" in self.branches,
+            },
+        }
+        production = {}
+        for key, item in expected.items():
+            branch = self.branches.get(key)
+            production[key] = {
+                **item,
+                "model": branch.name if branch else None,
+                "path": branch.path if branch else item["artifact"],
+                "status": "ACTIVE" if branch else "UNAVAILABLE",
+                "error": self.branch_load_errors.get(key),
+            }
+        evaluated = []
+        comparison = self.rul_comparison or {}
+        if isinstance(comparison.get("baseline"), dict):
+            evaluated.append({"key": "baseline", "model": "HistGradientBoosting", **comparison["baseline"]})
+        for key, label in (("lstm", "LSTM"), ("tcn", "TCN")):
+            entry = comparison.get("models", {}).get(key)
+            if isinstance(entry, dict):
+                evaluated.append({"key": key, "model": label, **entry})
         return {
             "mode": self.mode,
             "branches": {
@@ -180,6 +256,8 @@ class CMapssModelRuntime:
                 }
                 for key, branch in self.branches.items()
             },
+            "production_branches": production,
+            "evaluated_rul_models": evaluated,
             "required_window": self.window_size,
             "rul_selection": {
                 "requested": self.rul_architecture,
