@@ -34,9 +34,10 @@ not a claim that XGBoost/LSTM/TCN/Isolation Forest are already trained.
 3. Add the 30-cycle telemetry sequence buffer. ✅
 4. Add XGBoost failure-risk branch. ✅
 5. Add Isolation Forest as an independent branch. ✅
-6. Fuse the model outputs.
-7. Compare LSTM/TCN with the baseline before replacing the RUL branch.
-8. Persist the twin and then optimize maintenance/spares at fleet level.
+6. Fuse the model outputs. **Implemented:** Health Fusion now produces NORMAL/WATCH/DEGRADED/CRITICAL states.
+7. Compare LSTM/TCN with the baseline before replacing the RUL branch. **Implemented:** comparison metadata is emitted by `scripts/train_temporal_rul.py`; replacement is intentionally not automatic.
+8. Run real-time inference across the model branches. **Implemented:** FastAPI and WebSocket now consume the unified runtime with cold-start fallback.
+9. Persist the twin and then optimize maintenance/spares at fleet level.
 10. Upgrade the UI once the backend outputs are stable.
 
 
