@@ -259,6 +259,23 @@ class CMapssModelRuntime:
     ) -> dict[str, Any]:
         key = (aircraft_id, component)
         history = self.histories[key]
+        quality_fields = ["op_setting_1", "op_setting_2", "op_setting_3"] + [f"sensor_{i}" for i in range(1, 22)]
+        aliases = {"sensor_2": "egt_c", "sensor_3": "vibration_g", "sensor_4": "oil_pressure_kpa"}
+        missing_fields = [name for name in quality_fields if telemetry.get(name) is None and telemetry.get(aliases.get(name, "__none__")) is None]
+        invalid_fields = []
+        for name in quality_fields:
+            value = telemetry.get(name)
+            if value is None:
+                value = telemetry.get(aliases.get(name, "__none__"))
+            try:
+                if value is not None and not np.isfinite(float(value)):
+                    invalid_fields.append(name)
+            except (TypeError, ValueError):
+                invalid_fields.append(name)
+        input_quality = float(np.clip(
+            1.0 - (len(missing_fields) + len(invalid_fields)) / max(len(quality_fields), 1),
+            0.0, 1.0,
+        ))
         next_cycle = int(cycle if cycle is not None else (history[-1]["cycle"] + 1 if history else 1))
         row = self.normalize_telemetry(telemetry, cycle=next_cycle)
         history.append(row)
@@ -276,6 +293,10 @@ class CMapssModelRuntime:
                 "failure_probability": None,
                 "anomaly_score": None,
                 "confidence": round(quality * 0.5, 3),
+                "prediction_status": "COLD_START",
+                "input_quality": round(input_quality, 3),
+                "missing_fields": missing_fields,
+                "invalid_fields": invalid_fields,
             }
 
         history_rows = list(history)
@@ -298,6 +319,10 @@ class CMapssModelRuntime:
                 "failure_probability": None,
                 "anomaly_score": None,
                 "confidence": 0.0,
+                "prediction_status": "DEGRADED_DATA",
+                "input_quality": round(input_quality, 3),
+                "missing_fields": missing_fields,
+                "invalid_fields": invalid_fields,
             }
 
         frame = self._feature_frame(history_rows, feature_columns)
@@ -322,7 +347,7 @@ class CMapssModelRuntime:
 
         risk = 0.05 if risk is None else float(np.clip(risk, 0.0, 1.0))
         anomaly = 0.0 if anomaly is None else float(np.clip(anomaly, 0.0, 1.0))
-        data_quality = 1.0
+        data_quality = round(input_quality, 3)
 
         health = float(np.clip(1.0 - (0.55 * risk + 0.45 * anomaly), 0.0, 1.0))
         confidence = float(np.clip(
@@ -345,6 +370,10 @@ class CMapssModelRuntime:
             "anomaly_detected": anomaly_detected,
             "anomaly_score_raw": None if anomaly_raw is None else round(anomaly_raw, 6),
             "confidence": round(confidence, 4),
+            "prediction_status": "DEGRADED_DATA" if data_quality < 0.80 else "READY",
+            "input_quality": data_quality,
+            "missing_fields": missing_fields,
+            "invalid_fields": invalid_fields,
         }
 
     def seed_history(self, aircraft_id: str, component: str, rows: list[Mapping[str, Any]]) -> None:
