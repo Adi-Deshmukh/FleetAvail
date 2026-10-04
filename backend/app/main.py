@@ -42,6 +42,18 @@ class Maintenance(BaseModel):
     mission_priority: float = Field(1, ge=.1, le=2)
 
 
+class MaintenanceExecution(BaseModel):
+    component: str = "ENGINE"
+    action: str = "REPLACE_COMPONENT"
+    cycle: int = Field(..., ge=0)
+
+
+class PlanningOptions(BaseModel):
+    mission_priority: float = Field(1, ge=.1, le=2)
+    horizon_days: int = Field(7, ge=1, le=30)
+    max_daily_hours: float = Field(24, gt=0, le=168)
+
+
 @app.get("/")
 def root():
     return FileResponse(ROOT / "frontend" / "index.html")
@@ -62,6 +74,11 @@ def summary():
     return service.fleet_summary()
 
 
+@app.get("/api/fleet/availability")
+def fleet_availability():
+    return service.fleet_availability()
+
+
 @app.get("/api/fleet/aircraft")
 def aircraft():
     return service.aircraft_list()
@@ -73,6 +90,29 @@ def detail(aircraft_id: str):
         return service.aircraft_detail(aircraft_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Aircraft not found")
+
+
+@app.get("/api/fleet/aircraft/{aircraft_id}/twin")
+def twin(aircraft_id: str):
+    try:
+        return service.twin_snapshot(aircraft_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Aircraft not found")
+
+
+@app.post("/api/fleet/aircraft/{aircraft_id}/maintenance")
+def execute_maintenance(aircraft_id: str, x: MaintenanceExecution):
+    try:
+        return service.record_maintenance(
+            aircraft_id,
+            x.component.upper(),
+            x.action,
+            x.cycle,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Aircraft not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.post("/api/predict")
@@ -88,7 +128,11 @@ def predict(x: PredictionRequest):
 @app.post("/api/simulate/what-if")
 def whatif(x: WhatIf):
     try:
-        return service.what_if(x.aircraft_id, x.component.upper(), x.degradation_pct)
+        return service.what_if(
+            x.aircraft_id,
+            x.component.upper(),
+            x.degradation_pct,
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail="Aircraft not found")
 
@@ -96,14 +140,44 @@ def whatif(x: WhatIf):
 @app.post("/api/maintenance/recommend")
 def recommend(x: Maintenance):
     try:
-        return service.maintenance_recommendation(x.aircraft_id, x.mission_priority)
+        return service.maintenance_recommendation(
+            x.aircraft_id,
+            x.mission_priority,
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail="Aircraft not found")
+
+
+@app.post("/api/maintenance/plan")
+def maintenance_plan(x: PlanningOptions):
+    return service.maintenance_plan(
+        mission_priority=x.mission_priority,
+        horizon_days=x.horizon_days,
+        max_daily_hours=x.max_daily_hours,
+    )
 
 
 @app.get("/api/spares")
 def spares():
     return service.spares()
+
+
+@app.post("/api/spares/allocate")
+def allocate_spares(x: PlanningOptions):
+    return service.allocate_spares_for_plan(
+        mission_priority=x.mission_priority,
+        horizon_days=x.horizon_days,
+        max_daily_hours=x.max_daily_hours,
+    )
+
+
+@app.post("/api/fleet/availability")
+def projected_availability(x: PlanningOptions):
+    return service.fleet_availability(
+        mission_priority=x.mission_priority,
+        horizon_days=x.horizon_days,
+        max_daily_hours=x.max_daily_hours,
+    )
 
 
 @app.websocket("/ws/telemetry")
