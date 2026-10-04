@@ -5,6 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import json
 import numpy as np
+import joblib
 
 from ml.cmapss.config import CMapssConfig
 from ml.cmapss.data import load_cmapss
@@ -55,6 +56,7 @@ def main():
     p.add_argument("--batch-size", type=int, default=128)
     p.add_argument("--raw-dir", default="data/raw/cmapss")
     p.add_argument("--model-dir", default="models/cmapss")
+    p.add_argument("--baseline-meta", default=None)
     args = p.parse_args()
 
     cfg = CMapssConfig(window_size=args.window, raw_dir=Path(args.raw_dir))
@@ -71,6 +73,8 @@ def main():
 
     architectures = ["lstm", "tcn"] if args.architecture == "both" else [args.architecture]
     results = {}
+    baseline_path = Path(args.baseline_meta or f"{args.model_dir}/{args.subset.lower()}_rul.json")
+    baseline = json.loads(baseline_path.read_text()) if baseline_path.exists() else None
 
     for arch in architectures:
         builder = build_lstm if arch == "lstm" else build_tcn
@@ -84,6 +88,8 @@ def main():
         val_metrics = regression_metrics(y_val, wrapped.predict(X_val))
         out = Path(args.model_dir) / f"{args.subset.lower()}_{arch}_rul.keras"
         wrapped.save(out)
+        scaler_path = out.with_name(out.stem + "_scaler.joblib")
+        joblib.dump(scaler, scaler_path)
         meta = {
             "dataset": args.subset,
             "architecture": arch,
@@ -98,6 +104,7 @@ def main():
             "validation_metrics": val_metrics,
             "test_metrics": metrics,
             "model": str(out),
+            "scaler": str(scaler_path),
             "baseline_comparison_required": True,
             "baseline": "HistGradientBoosting",
         }
@@ -107,7 +114,8 @@ def main():
     comparison = {
         "dataset": args.subset,
         "window": args.window,
-        "baseline_comparison": "Compare test MAE/RMSE/score against fd001_rul.json before replacement.",
+        "baseline": (baseline.get("metrics") if baseline else None),
+        "baseline_source": str(baseline_path) if baseline else None,
         "models": {
             arch: {
                 "mae": meta["test_metrics"]["mae"],
