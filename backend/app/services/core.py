@@ -124,7 +124,10 @@ class FleetService:
         x = self.aircraft[aid].components[component]
         if prediction.get("rul_cycles") is None:
             return
+        risk = prediction["failure_probability"]
+        anomaly = prediction["anomaly_score"]
         x.update({
+            "health": max(0.0, min(1.0, 1.0 - (0.55 * risk + 0.45 * anomaly))),
             "rul": prediction["rul_cycles"],
             "risk": prediction["failure_probability"],
             "anomaly": prediction["anomaly_score"],
