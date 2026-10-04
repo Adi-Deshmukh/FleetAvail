@@ -160,3 +160,38 @@ def test_phase_b_end_to_end_operational_flow():
 
 
 client = TestClient(main_module.app)
+
+
+def test_fleet_readiness_tracks_engine_health_state():
+    aircraft = main_module.service.aircraft["AF-001"]
+    aircraft.status = "READY"
+    aircraft.components["ENGINE"].update({
+        "health": 0.25,
+        "risk": 0.92,
+        "anomaly": 0.91,
+        "rul": 12.0,
+    })
+
+    fleet = client.get("/api/fleet/aircraft").json()
+    row = next(item for item in fleet if item["aircraft_id"] == "AF-001")
+    assert row["status"] == "CRITICAL"
+    assert row["engine"]["health_level"] == "CRITICAL"
+
+    summary = client.get("/api/fleet/summary").json()
+    assert summary["critical_aircraft"] >= 1
+    assert summary["ready"] + summary["degraded"] + summary["maintenance"] + summary["critical_aircraft"] == 12
+
+
+def test_websocket_telemetry_is_pinned_and_runs_inference():
+    with client.websocket_connect("/ws/telemetry?aircraft_id=AF-001") as websocket:
+        first = websocket.receive_json()
+        second = websocket.receive_json()
+
+    assert first["aircraft_id"] == "AF-001"
+    assert second["aircraft_id"] == "AF-001"
+    assert first["component"] == "ENGINE"
+    assert second["component"] == "ENGINE"
+    assert "failure_probability" in first
+    assert "anomaly_score" in first
+    assert "prediction_status" in first
+    assert second["cycle"] >= first["cycle"]
