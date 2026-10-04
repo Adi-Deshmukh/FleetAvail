@@ -63,6 +63,7 @@ class FleetService:
         self.observability = PredictionObservability()
         self.replay_rows: dict[str, list[dict]] = {}
         self.replay_index: dict[str, int] = {}
+        self.live_signal_state: dict[str, dict[str, float]] = {}
 
         for i in range(1, 13):
             comps = {}
@@ -698,16 +699,40 @@ class FleetService:
         existing = twin.components.get("ENGINE")
         cycle = int(telemetry.get("cycle", existing.last_update_cycle + 1 if existing else 1))
         result = self.predict(aircraft_id, "ENGINE", telemetry)
+
+        # Keep one-second ingestion responsive while smoothing operator-facing
+        # signal jitter. Raw model outputs remain available for API/observability.
+        previous = self.live_signal_state.get(aircraft_id)
+        alpha = 0.20
+
+        def smooth(name: str, value: float) -> float:
+            current = float(value)
+            if previous is None:
+                return current
+            return previous[name] + alpha * (current - previous[name])
+
+        live_health = smooth("health", result["health_score"])
+        live_risk = smooth("risk", result["failure_probability"])
+        live_anomaly = smooth("anomaly", result["anomaly_score"])
+        self.live_signal_state[aircraft_id] = {
+            "health": live_health,
+            "risk": live_risk,
+            "anomaly": live_anomaly,
+        }
+
         return {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "event": "telemetry_update",
             "aircraft_id": aircraft_id,
             "component": "ENGINE",
             "cycle": cycle,
-            "health_score": result["health_score"],
+            "health_score": round(live_health, 2),
             "rul_cycles": result["rul_cycles"],
-            "failure_probability": result["failure_probability"],
-            "anomaly_score": result["anomaly_score"],
+            "failure_probability": round(live_risk, 4),
+            "anomaly_score": round(live_anomaly, 4),
+            "raw_health_score": result["health_score"],
+            "raw_failure_probability": result["failure_probability"],
+            "raw_anomaly_score": result["anomaly_score"],
             "confidence": result["confidence"],
             "data_quality": result["data_quality"],
             "health_level": result["health_level"],
