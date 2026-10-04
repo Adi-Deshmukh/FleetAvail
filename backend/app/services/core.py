@@ -215,6 +215,11 @@ class FleetService:
             data_quality=prediction["data_quality"],
             cycle=cycle,
         )
+        # Keep the digital twin mission flag aligned with the authoritative
+        # operational state used by Fleet Monitor and fleet availability.
+        twin = self.twin_store.get_or_create(aircraft_id)
+        twin.mission_status = self.operational_status(self.aircraft[aircraft_id])
+        self.twin_store.save()
 
     def health(self):
         return {
@@ -296,9 +301,13 @@ class FleetService:
 
     def aircraft_detail(self, aircraft_id):
         aircraft = self.aircraft[aircraft_id]
+        operational_state = self.operational_status(aircraft)
+        twin = self.twin_store.get_or_create(aircraft_id)
+        twin.mission_status = operational_state
+        self.twin_store.save()
         return {
             "aircraft_id": aircraft_id,
-            "status": self.operational_status(aircraft),
+            "status": operational_state,
             "components": {
                 component: self.fused(aircraft, component)
                 for component in COMPONENTS
