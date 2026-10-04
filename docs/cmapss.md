@@ -44,3 +44,43 @@ python scripts/predict_cmapss.py --subset FD001
 5. Add LSTM/TCN.
 6. Calibrate uncertainty.
 7. Evaluate cross-subset generalisation.
+
+
+## XGBoost failure-risk model
+
+The failure-risk branch is trained independently from the existing RUL baseline. A row is labeled as failure-risk when its RUL is less than or equal to a configurable horizon; the default is 30 cycles.
+
+The implementation is in:
+- `ml/cmapss/failure_risk.py`
+- `scripts/train_failure.py`
+- `scripts/predict_failure.py`
+- `tests/test_failure.py`
+
+The training workflow is engine-aware: complete engine trajectories are split into training, calibration and holdout groups, so rows from the same engine cannot leak across those sets. XGBoost is trained on the leakage-safe temporal features, class imbalance is handled with `scale_pos_weight`, and a sigmoid/Platt calibrator is fit only on the held-out calibration engines.
+
+Train:
+
+```powershell
+python scripts/train_failure.py --subset FD001 --horizon 30
+```
+
+This writes:
+
+```
+models/cmapss/fd001_failure.joblib
+models/cmapss/fd001_failure.json
+```
+
+Evaluate and print terminal-engine failure-risk predictions:
+
+```powershell
+python scripts/predict_failure.py --subset FD001
+```
+
+Focused tests:
+
+```powershell
+pytest -q tests/test_failure.py
+```
+
+The XGBoost branch is currently a standalone validated modeling feature. FastAPI integration, Health Fusion and the anomaly branch are later stages and are not changed by this feature.

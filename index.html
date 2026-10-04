@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FleetAvail — Engineering Change Log</title>
+  <meta name="description" content="FleetAvail engineering change log, implementation map, testing guide, architecture relationships, and roadmap.">
+  <style>
+    :root{
+      --bg:#07111f;--panel:#0d1a2b;--panel2:#101f33;--line:#20364f;
+      --text:#eaf2fb;--muted:#a9bbcf;--good:#67e8a5;--warn:#ffd166;--info:#73b9ff;
+      --bad:#ff8585;--accent:#8bc6ff;--code:#081522
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(180deg,#06101c 0%,#091727 100%);color:var(--text);font:15px/1.6 Inter,Segoe UI,Arial,sans-serif}
+    a{color:var(--accent)}
+    header{padding:42px 24px 28px;border-bottom:1px solid var(--line);background:rgba(4,12,22,.78)}
+    main{max-width:1180px;margin:0 auto;padding:24px}
+    h1{font-size:38px;line-height:1.1;margin:0 0 10px}
+    h2{font-size:25px;margin:34px 0 14px}
+    h3{font-size:18px;margin:24px 0 8px}
+    p{margin:8px 0;color:var(--muted)}
+    .subtitle{max-width:900px;font-size:17px}
+    .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+    .pill{border:1px solid var(--line);background:var(--panel);padding:5px 10px;border-radius:999px;color:var(--muted);font-size:13px}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+    .card{background:linear-gradient(180deg,var(--panel),#0a1626);border:1px solid var(--line);border-radius:14px;padding:18px}
+    .card strong{display:block;font-size:27px;margin-top:2px}
+    .label{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+    .status{font-weight:700}
+    .done{color:var(--good)} .next{color:var(--warn)} .target{color:var(--info)}
+    table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+    th,td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+    th{background:var(--panel2);font-size:13px;color:#cfe1f5}
+    tr:last-child td{border-bottom:0}
+    code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+    code{background:var(--code);border:1px solid #17304b;padding:2px 5px;border-radius:5px}
+    pre{background:var(--code);border:1px solid #183149;border-radius:10px;padding:15px;overflow:auto;color:#d8e8f7}
+    .timeline{display:grid;gap:12px}
+    .entry{border-left:3px solid var(--info);padding:12px 16px;background:var(--panel);border-radius:0 10px 10px 0}
+    .entry .title{font-weight:700;font-size:17px}
+    .small{font-size:13px;color:var(--muted)}
+    .arch{white-space:pre-wrap;font-weight:600;line-height:1.85}
+    .note{border-left:4px solid var(--warn);background:#151b19;padding:13px 16px;border-radius:8px}
+    .okbox{border-left:4px solid var(--good);background:#0d211a;padding:13px 16px;border-radius:8px}
+    .danger{border-left:4px solid var(--bad);background:#231515;padding:13px 16px;border-radius:8px}
+    footer{max-width:1180px;margin:20px auto 50px;padding:0 24px;color:var(--muted);font-size:13px}
+    @media(max-width:850px){.grid{grid-template-columns:1fr}.subtitle{font-size:15px}h1{font-size:31px}}
+  </style>
+</head>
+<body>
+<header>
+  <main style="padding:0 24px">
+    <div class="label">FleetAvail · SIH26249</div>
+    <h1>Engineering Change Log &amp; Verification Guide</h1>
+    <p class="subtitle">
+      This page records the changes implemented on the FleetAvail <code>main</code> branch,
+      what each change means in simple words, how it connects to the rest of the system,
+      which feature it belongs to, and how to check it locally.
+    </p>
+    <div class="meta">
+      <span class="pill">Repository: dis-craft/FleetAvail</span>
+      <span class="pill">Target branch: main</span>
+      <span class="pill">Changelog added: October 4, 2026</span>
+      <span class="pill">Current architecture: backend-first</span>
+      <span class="pill">Feature #2: sequence buffer implemented</span>
+      <span class="pill">Feature #3: XGBoost failure risk implemented</span>
+    </div>
+  </main>
+</header>
+
+<main>
+  <section>
+    <h2>1. What this page is for</h2>
+    <p>
+      FleetAvail is intended to move from telemetry to model predictions, then from predictions
+      to maintenance decisions and finally to fleet availability. The existing repository already
+      has the C-MAPSS baseline and a runnable synthetic dashboard. The multi-model architecture is
+      still a target and is not being represented as already trained or production-ready.
+    </p>
+    <div class="arch card">
+Aircraft telemetry + maintenance history
+        ↓
+Validation / data quality
+        ↓
+Leakage-aware preprocessing
+        ↓
+Temporal feature engineering
+        ↓
+     ┌──────────────┬───────────────┐
+     ↓              ↓               ↓
+  XGBoost       LSTM / TCN     Isolation Forest
+Failure risk       RUL              Anomaly
+     └──────────────┼───────────────┘
+                    ↓
+              Health Fusion
+                    ↓
+               Digital Twin
+                    ↓
+          Maintenance Optimizer
+                    ↓
+              Spare Allocation
+                    ↓
+            Fleet Availability
+                    ↓
+             Dashboard / API
+    </div>
+  </section>
+
+  <section>
+    <h2>2. Current implementation status</h2>
+    <div class="grid">
+      <div class="card"><span class="label">C-MAPSS pipeline</span><strong class="done">Implemented</strong><p>Loader, RUL generation, cleaning, constant-feature removal, temporal features, train-only scaling and 30-cycle sequences already exist.</p></div>
+      <div class="card"><span class="label">Provider boundary</span><strong class="done">Implemented</strong><p>A trained C-MAPSS RUL artifact can now sit behind a clean provider adapter without changing the decision-layer contract.</p></div>
+      <div class="card"><span class="label">Sequence buffer</span><strong class="done">Implemented</strong><p>Feature #2 keeps the latest 30 telemetry samples separately for every aircraft/component pair.</p></div>
+      <div class="card"><span class="label">XGBoost</span><strong class="done">Implemented</strong><p>Feature #3 now defines failure within a configurable RUL horizon, trains an XGBoost classifier, calibrates probabilities on held-out engines, and persists metadata.</p></div>
+      <div class="card"><span class="label">Next feature</span><strong class="next">Isolation Forest</strong><p>The next single feature is unsupervised anomaly detection; it will remain separate from the API integration.</p></div>
+      <div class="card"><span class="label">LSTM / TCN</span><strong class="target">Not yet</strong><p>Temporal deep-learning RUL models remain future work and must be compared with the current baseline.</p></div>
+      <div class="card"><span class="label">Frontend</span><strong class="target">Existing v1</strong><p>A runnable static dashboard exists under <code>frontend/index.html</code>; the final React/Next.js + Three.js UI comes later.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. Detailed change log — changes implemented in this work</h2>
+    <div class="timeline">
+      <div class="entry">
+        <div class="title">Feature 1 — C-MAPSS model provider boundary</div>
+        <div class="small">File: <code>ml/cmapss/providers.py</code></div>
+        <p><b>What it is:</b> A small adapter around the existing trained C-MAPSS RUL model.</p>
+        <p><b>Simple meaning:</b> Instead of the API needing to know how the model was trained or saved, it can ask a provider for a prediction.</p>
+        <p><b>What it does:</b> Loads a <code>.joblib</code> C-MAPSS model, accepts one preprocessed temporal sequence with shape <code>[window, features]</code>, calls the trained model and returns a non-negative RUL prediction.</p>
+        <p><b>Relationship:</b> It sits between the C-MAPSS model artifact and the future real-time inference layer. Later XGBoost, Isolation Forest, LSTM and TCN providers can use the same architecture.</p>
+        <p><b>Important:</b> Adding this adapter does <u>not</u> mean the repository now has a trained model artifact or real aircraft model inference.</p>
+      </div>
+
+      <div class="entry">
+        <div class="title">Feature 1 — Optional fused provider + safe fallback</div>
+        <div class="small">File: <code>ml/cmapss/providers.py</code></div>
+        <p><b>What it is:</b> <code>FusedPredictionProvider</code> provides a transition layer between the current heuristic system and future trained models.</p>
+        <p><b>Simple meaning:</b> The project can keep running even when there is no trained model file yet, while giving us a clean place to plug the real RUL result in.</p>
+        <p><b>Relationship:</b> It uses the existing <code>ml/health.py</code> fusion function. Later, XGBoost failure risk and Isolation Forest anomaly outputs can be injected into the same flow.</p>
+        <p><b>Metadata:</b> The provider now returns a <code>model_version</code> value so model provenance can eventually be exposed through the API.</p>
+      </div>
+
+      <div class="entry">
+        <div class="title">Contract upgrade — sequence-aware PredictionProvider</div>
+        <div class="small">File: <code>ml/model_contract.py</code></div>
+        <p><b>What it is:</b> The prediction contract was changed from scalar feature-only input to allow an optional temporal sequence.</p>
+        <p><b>Simple meaning:</b> A future LSTM/TCN or C-MAPSS temporal model needs a history of sensor readings, not just one row. The contract now allows that history.</p>
+        <p><b>Relationship:</b> This is the interface between telemetry buffering, preprocessing, models and the API.</p>
+        <p><b>New field:</b> <code>Prediction.model_version</code> defaults to <code>"unknown"</code> so existing consumers do not break.</p>
+      </div>
+
+      <div class="entry">
+        <div class="title">Provider unit test</div>
+        <div class="small">File: <code>ml/cmapss/providers_test.py</code></div>
+        <p><b>What it is:</b> A small deterministic test using a stub model.</p>
+        <p><b>Simple meaning:</b> It proves the provider sends exactly one 30-cycle, 2-feature sequence to a model and correctly reads the returned RUL.</p>
+        <p><b>Why this matters:</b> We can validate the adapter without needing the NASA dataset or expensive training.</p>
+      </div>
+
+      <div class="entry">
+        <div class="title">Implementation roadmap</div>
+        <div class="small">File: <code>docs/roadmap.md</code></div>
+        <p><b>What it is:</b> A stage-by-stage implementation plan covering the complete FleetAvail system.</p>
+        <p><b>Simple meaning:</b> It prevents us from implementing the frontend or optimizers before the model outputs and decision data are stable.</p>
+        <p><b>Relationship:</b> It defines the order: provider → sequence buffer → XGBoost → Isolation Forest → fusion → LSTM/TCN → real-time inference → digital twin → optimization → fleet availability → MLOps → final frontend.</p>
+      </div>
+
+      <div class="entry">
+        <div class="title">Feature 2 — 30-cycle telemetry sequence buffer</div>
+        <div class="small">Files: <code>ml/sequence_buffer.py</code> and <code>tests/test_sequence_buffer.py</code></div>
+        <p><b>What it is:</b> A bounded in-memory history for telemetry samples, independently keyed by aircraft and component.</p>
+        <p><b>Simple meaning:</b> The system remembers the latest 30 readings for one aircraft component instead of treating every reading as an isolated value.</p>
+        <p><b>What it does:</b> Validates identifiers and numeric finite sensor values, requires strictly increasing cycle numbers, retains only the latest <code>window_size</code> samples, reports whether a full window exists, returns chronological samples, and converts a complete window into a <code>float32</code> NumPy array in the requested feature order.</p>
+        <p><b>Relationship:</b> This is the input-side foundation for the C-MAPSS provider and future LSTM/TCN inference. It deliberately does not scale data, engineer features, run models, or change the FastAPI behavior yet.</p>
+        <p><b>Tests:</b> Covers rolling-window limits, aircraft/component isolation, feature ordering and array shape, duplicate/out-of-order rejection, invalid values, and incomplete-window handling.</p>
+      </div>
+
+      <div class="entry">
+        <div class="title">Feature 3 — XGBoost failure-risk model</div>
+        <div class="small">Files: <code>ml/cmapss/failure_risk.py</code>, <code>scripts/train_failure.py</code>, <code>scripts/predict_failure.py</code>, <code>tests/test_failure.py</code></div>
+        <p><b>What it is:</b> A supervised classifier that estimates the probability that an engine is inside a defined failure-risk horizon.</p>
+        <p><b>Simple meaning:</b> Instead of only asking “how many cycles are left?”, the system can also ask “how likely is failure within the next N cycles?”</p>
+        <p><b>Failure definition:</b> A row is labeled <code>failure_within_horizon=1</code> when its RUL is less than or equal to the configured horizon. The default training horizon is 30 cycles.</p>
+        <p><b>Validation:</b> Engine trajectories are split as complete units into train, calibration and holdout sets. Individual rows from one engine are never spread across those splits.</p>
+        <p><b>Model:</b> XGBoost's binary classifier is trained with class-imbalance weighting. Probabilities are then calibrated with a sigmoid/Platt calibrator fitted only on the held-out calibration engines.</p>
+        <p><b>Outputs:</b> Calibrated failure probability, configurable classification threshold, ROC-AUC, average precision, Brier score, log loss, precision, recall and F1.</p>
+        <p><b>Persistence:</b> The model is saved as <code>.joblib</code>; metadata stores the dataset, horizon, feature schema, temporal windows, split fractions, threshold and evaluation results.</p>
+        <p><b>Relationship:</b> This is the failure-risk branch alongside the RUL branch. It is intentionally <u>not connected to FastAPI yet</u>; real-time model orchestration comes later after the remaining model branches are established.</p>
+        <p><b>Tests:</b> Covers horizon labeling, engine isolation, calibrated probabilities, model save/load round-trip and threshold-aware metrics.</p>
+      </div>
+
+      <div class="entry">
+        <div class="title">C-MAPSS raw-data directory structure</div>
+        <div class="small">Files: <code>data/raw/cmapss/.gitkeep</code> and <code>data/raw/cmapss/FD001/.gitkeep</code></div>
+        <p><b>What it is:</b> Repository placeholders for the required NASA C-MAPSS dataset location.</p>
+        <p><b>Simple meaning:</b> Git now preserves the folder structure even though the actual dataset is not committed.</p>
+        <p><b>Required FD001 files:</b> <code>train.txt</code>, <code>test.txt</code>, <code>RUL_test.txt</code>.</p>
+        <p><b>Relationship:</b> The training scripts already read this location, so the provider can later load a model trained from that pipeline.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>4. How the changes connect together</h2>
+    <table>
+      <thead><tr><th>Part</th><th>Simple explanation</th><th>Connects to</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><code>data/raw/cmapss/FD001</code></td><td>NASA engine history goes here.</td><td>C-MAPSS loader → training</td><td class="status done">Ready for user data</td></tr>
+        <tr><td><code>ml/cmapss/data.py</code></td><td>Reads the engine files and builds RUL targets.</td><td>Features → sequences</td><td class="status done">Existing</td></tr>
+        <tr><td><code>ml/cmapss/features.py</code></td><td>Cleans and creates temporal features without leakage.</td><td>Sequences → model</td><td class="status done">Existing</td></tr>
+        <tr><td><code>ml/cmapss/sequences.py</code></td><td>Makes 30-cycle windows.</td><td>Training → provider</td><td class="status done">Existing</td></tr>
+        <tr><td><code>ml/cmapss/model.py</code></td><td>Current baseline RUL estimator.</td><td>Provider adapter</td><td class="status done">Existing</td></tr>
+        <tr><td><code>ml/cmapss/providers.py</code></td><td>Standard doorway to a trained RUL model.</td><td>Future API / sequence buffer</td><td class="status done">Added</td></tr>
+        <tr><td><code>ml/sequence_buffer.py</code></td><td>Keeps the latest bounded telemetry history for one aircraft/component.</td><td>Future real-time inference → C-MAPSS/LSTM/TCN providers</td><td class="status done">Feature #2</td></tr>
+        <tr><td><code>ml/cmapss/failure_risk.py</code></td><td>Predicts probability of failure within the configured RUL horizon.</td><td>Future Health Fusion / real-time inference</td><td class="status done">Feature #3</td></tr>
+        <tr><td><code>ml/model_contract.py</code></td><td>Defines the common prediction shape.</td><td>All future model branches</td><td class="status done">Updated</td></tr>
+        <tr><td><code>ml/health.py</code></td><td>Converts health/risk/anomaly/RUL information into an operational health result.</td><td>Provider outputs → decisions</td><td class="status done">Existing prototype</td></tr>
+        <tr><td><code>backend/app/main.py</code></td><td>FastAPI endpoints exposed to the dashboard.</td><td>Real-time inference</td><td class="status target">Still heuristic</td></tr>
+        <tr><td><code>frontend/index.html</code></td><td>Current simple command dashboard.</td><td>FastAPI endpoints</td><td class="status done">Existing v1</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>5. Dataset structure required for training</h2>
+    <pre>FleetAvail/
+└── data/
+    └── raw/
+        └── cmapss/
+            └── FD001/
+                ├── train.txt
+                ├── test.txt
+                └── RUL_test.txt</pre>
+    <div class="note">
+      The dataset is intentionally not committed to Git. Put the official NASA C-MAPSS files in the
+      above location locally. The repository's existing loader, not this changelog, is responsible for
+      parsing the data.
+    </div>
+  </section>
+
+  <section>
+    <h2>6. How to check each implemented feature</h2>
+    <h3>Feature 3 — Test the XGBoost failure-risk model</h3>
+    <pre>pytest -q tests/test_failure.py</pre>
+    <p>Expected: all four failure-risk tests pass.</p>
+    <p>After the NASA FD001 files are present, train the model with:</p>
+    <pre>python scripts/train_failure.py --subset FD001 --horizon 30</pre>
+    <p>Then inspect terminal-engine predictions and evaluation metrics with:</p>
+    <pre>python scripts/predict_failure.py --subset FD001</pre>
+    <p>The trained artifacts are written to <code>models/cmapss/fd001_failure.joblib</code> and <code>models/cmapss/fd001_failure.json</code>. Training and numerical metrics require the actual C-MAPSS files and are not claimed here unless run on those files.</p>
+    <h3>Feature 2 — Test the telemetry sequence buffer</h3>
+    <pre>pytest -q tests/test_sequence_buffer.py</pre>
+    <p>Expected: all five sequence-buffer tests pass.</p>
+    <p>The tests prove that the buffer keeps only the latest window, isolates aircraft/component histories, preserves chronological order, returns the expected <code>float32</code> shape, rejects duplicate/out-of-order cycles, rejects non-finite values, and blocks full-window access until enough samples exist.</p>
+    <h3>A. Check the provider without training</h3>
+    <p>Run this from the repository root after dependencies are installed:</p>
+    <p>The provider unit test is the recommended deterministic check because it exercises the exact provider boundary without requiring NASA data or a trained artifact.</p>
+    <pre>pytest -q ml/cmapss/providers_test.py</pre>
+    <p>Expected result: one provider test passes.</p>
+
+    <h3>B. Check the contract</h3>
+    <pre>python -c "from ml.model_contract import Prediction; p=Prediction(10,0.2,0.1,0.9,1.0); print(p)"</pre>
+    <p>Expected: the printed object contains <code>model_version='unknown'</code>.</p>
+
+    <h3>C. Train the current C-MAPSS baseline</h3>
+    <pre>python scripts/train_cmapss.py --subset FD001 --window 30</pre>
+    <p>This requires the three FD001 NASA files. It should create:</p>
+    <pre>models/cmapss/fd001_rul.joblib
+models/cmapss/fd001_rul.json</pre>
+
+    <h3>D. Run terminal prediction</h3>
+    <pre>python scripts/predict_cmapss.py --subset FD001</pre>
+    <p>This uses the trained artifact and prints predicted RUL per test engine.</p>
+
+    <h3>E. Check the full existing application</h3>
+    <pre>python -m uvicorn backend.app.main:app --reload --port 8000</pre>
+    <p>Then open:</p>
+    <pre>http://127.0.0.1:8000/
+http://127.0.0.1:8000/docs
+http://127.0.0.1:8000/health</pre>
+    <p>The current dashboard remains heuristic/synthetic; training the C-MAPSS model alone does not automatically replace the API provider yet.</p>
+
+    <h3>F. Run the repository tests</h3>
+    <pre>pytest -q</pre>
+    <p>This is the final local verification command after installing the project's Python dependencies.</p>
+  </section>
+
+  <section>
+    <h2>7. Commands you must run locally</h2>
+    <pre>py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+# Put NASA C-MAPSS files under data/raw/cmapss/FD001/
+
+python scripts/train_cmapss.py --subset FD001 --window 30
+python scripts/predict_cmapss.py --subset FD001
+
+pytest -q
+
+python -m uvicorn backend.app.main:app --reload --port 8000</pre>
+    <div class="okbox">
+      I can modify repository source files and GitHub branches through the connected repository tools.
+      I cannot obtain the missing NASA dataset from your local machine, train a model from data that
+      is not available in the repository environment, or truthfully claim the full local test suite
+      passed without executing it against the resulting local environment.
+    </div>
+  </section>
+
+  <section>
+    <h2>8. What has NOT been implemented yet</h2>
+    <table>
+      <thead><tr><th>Feature</th><th>What it will add</th><th>Why it comes later</th></tr></thead>
+      <tbody>
+        <tr><td>Telemetry sequence buffer</td><td>In-memory rolling 30-cycle history per aircraft/component.</td><td class="status done">Implemented in Feature #2; API wiring comes later.</td></tr>
+        <tr><td>XGBoost failure model</td><td>Near-term failure probability.</td><td class="status done">Implemented in Feature #3; training still requires the local NASA dataset.</td></tr>
+        <tr><td>Isolation Forest</td><td>Unsupervised anomaly score.</td><td>Next model branch after failure-risk.</td></tr>
+        <tr><td>Isolation Forest</td><td>Unsupervised anomaly score.</td><td>Needs a normal-operation reference and threshold calibration.</td></tr>
+        <tr><td>Formal HealthState fusion</td><td>NORMAL/WATCH/DEGRADED/CRITICAL operational state.</td><td>Should combine real model outputs once the branches exist.</td></tr>
+        <tr><td>LSTM/TCN RUL</td><td>True temporal RUL model and comparison against the baseline.</td><td>Requires training and validation; not replaced prematurely.</td></tr>
+        <tr><td>Real-time ML API integration</td><td>FastAPI receives sequence data and runs actual trained providers.</td><td>Depends on the sequence buffer and model artifacts.</td></tr>
+        <tr><td>Digital twin persistence</td><td>Aircraft/component lifecycle history, maintenance and degradation state.</td><td>Needs stable inference outputs.</td></tr>
+        <tr><td>Maintenance optimization</td><td>Constraint-aware maintenance scheduling.</td><td>Needs formal actions, durations and constraints.</td></tr>
+        <tr><td>Spare allocation</td><td>Fleet-wide allocation of limited compatible parts.</td><td>Needs fleet maintenance demand and prioritization.</td></tr>
+        <tr><td>Fleet availability optimization</td><td>Projected readiness after decisions.</td><td>Depends on maintenance + spare decisions.</td></tr>
+        <tr><td>MLOps / explainability</td><td>Versioning, drift, uncertainty, SHAP and audit trail.</td><td>Best added once real models and decisions are stable.</td></tr>
+        <tr><td>Final React/Next.js + Three.js frontend</td><td>Full operational dashboard and 3D digital twin.</td><td>Backend contracts should stabilize first.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>9. Exact implementation order from here</h2>
+    <pre>1. C-MAPSS provider boundary                    ✅
+2. 30-cycle telemetry sequence buffer           ✅
+3. XGBoost failure-risk model                    ✅
+4. Isolation Forest anomaly model                → NEXT
+5. Health Fusion formalization                   → NEXT
+6. LSTM/TCN comparison                           → NEXT
+7. Real-time ML provider integration             → NEXT
+8. Digital Twin persistence                      → NEXT
+9. Maintenance optimizer                         → NEXT
+10. Spare allocation                             → NEXT
+11. Fleet availability optimization              → NEXT
+12. MLOps / explanations / audit trail           → NEXT
+13. React/Next.js + Three.js final frontend      → FINAL</pre>
+  </section>
+
+  <section>
+    <h2>10. Main-branch change history from this implementation</h2>
+    <table>
+      <thead><tr><th>Change</th><th>Commit</th><th>Primary files</th></tr></thead>
+      <tbody>
+        <tr><td>C-MAPSS provider boundary</td><td><code>3d36aa354bc8047ae42c19b1ce8bfa9ece832727</code></td><td><code>ml/cmapss/providers.py</code></td></tr>
+        <tr><td>Provider unit test</td><td><code>6ed687f42a38f47a51e1986bee78f9b32a1f646b</code></td><td><code>ml/cmapss/providers_test.py</code></td></tr>
+        <tr><td>Staged implementation roadmap</td><td><code>94ffa8a0e09b1d51d5719f9b32aa503152d3df70</code></td><td><code>docs/roadmap.md</code></td></tr>
+        <tr><td>C-MAPSS raw root placeholder</td><td><code>7fcddf4431b056c992d6e54d03800e977c9ee89e</code></td><td><code>data/raw/cmapss/.gitkeep</code></td></tr>
+        <tr><td>FD001 placeholder</td><td><code>b9ddd858c7b66e26830e05c45f3bbdb847692c31</code></td><td><code>data/raw/cmapss/FD001/.gitkeep</code></td></tr>
+        <tr><td>Sequence-aware prediction contract</td><td><code>177489d2421ff630ac5da651ad07b1c6df8c29de</code></td><td><code>ml/model_contract.py</code></td></tr>
+        <tr><td>Provider model-version propagation</td><td><code>07f52a37eb421243bbe5e4f0ba548f30b56c6006</code></td><td><code>ml/cmapss/providers.py</code></tr>
+        <tr><td>Telemetry sequence buffer</td><td><code>be83a1365a145ab06d17356011cbf2139890c695</code></td><td><code>ml/sequence_buffer.py</code></td></tr>
+        <tr><td>Sequence buffer tests</td><td><code>4def7d96cacbea0b4dc90875eec70f8ec9fc6625</code></td><td><code>tests/test_sequence_buffer.py</code></td></tr>
+        <tr><td>XGBoost failure-risk model</td><td><code>f99bc1cb7aaefbdb52154bc0c3b34d093fdd95e9</code></td><td><code>ml/cmapss/failure_risk.py</code></td></tr>
+        <tr><td>Failure-risk training command</td><td><code>a2ae07b0a581424531d39bba26127b272d61fc8b</code> then <code>543f78056fe3f95c88c3af6498d32b2464468697</code></td><td><code>scripts/train_failure.py</code></td></tr>
+        <tr><td>Failure-risk prediction command</td><td><code>5848f3d6f19f2d3ce4f28d4f9e042d091729c2a4</code> then <code>46509d68aa436b058ed007483a1b93e37741cfde</code></td><td><code>scripts/predict_failure.py</code></td></tr>
+        <tr><td>Failure-risk tests</td><td><code>3f931af8e3b09f18e412072124c5b1ef3e5645e5</code> then <code>b35a081504edc503b1082a87a1e99b0962176d7e</code></td><td><code>tests/test_failure.py</code></td></tr>
+        <tr><td>Feature #3 docs</td><td><code>cd936b402b46007739c7deebca48e65e481e6388</code></td><td><code>docs/roadmap.md</code>, marked Feature #3 complete</td></tr>
+        <tr><td>Feature #3 changelog</td><td><code>8112ebde56b6a49590083cbd10bb83b1510df07e</code></td><td><code>index.html</code>, documented Feature #3 implementation</td></tr>
+        <tr><td>Feature #3 C-MAPSS docs</td><td><code>c6946e1038c80b4f4723e8cadb40b27b9a048dca</code></td><td><code>docs/cmapss.md</code>, documented training/evaluation workflow</td></tr>
+        <tr><td>Feature #3 final source/test state</td><td><code>f99bc1cb7aaefbdb52154bc0c3b34d093fdd95e9</code>, <code>543f78056fe3f95c88c3af6498d32b2464468697</code>, <code>46509d68aa436b058ed007483a1b93e37741cfde</code>, <code>b35a081504edc503b1082a87a1e99b0962176d7e</code></td><td>XGBoost model + commands + tests</td></tr>
+        <tr><td>Feature #3 consistency fix</td><td><code>543f78056fe3f95c88c3af6498d32b2464468697</code></td><td><code>scripts/train_failure.py</code></td></tr>
+        <tr><td>Feature #3 changelog/roadmap updates</td><td>Current change</td><td><code>index.html</code>, <code>docs/roadmap.md</code></td></tr>
+      </tbody>
+    </table>
+    <p class="small">The commits above record the Feature #1, Feature #2 and Feature #3 implementation work. Feature #3 is implemented as a standalone model/training layer; it is not yet wired into the runtime API.</p>
+  </section>
+
+  <section>
+    <h2>11. Important distinction: code vs. trained results</h2>
+    <div class="danger">
+      <b>Do not confuse implementation with model validation.</b>
+      The code for the leakage-aware C-MAPSS pipeline exists, but a model artifact is not stored in Git.
+      Numerical MAE/RMSE/NASA-score results should only be reported after running the training and evaluation
+      command on the actual dataset. Example values in project documentation are not measured FleetAvail results.
+    </div>
+  </section>
+
+  <section>
+    <h2>12. Definition of done</h2>
+    <p>The final demonstration should be able to show one continuous chain:</p>
+    <pre>Telemetry
+  ↓
+30-cycle real sequence
+  ↓
+RUL + failure risk + anomaly
+  ↓
+Fused component health
+  ↓
+Aircraft digital-twin update
+  ↓
+Maintenance recommendation
+  ↓
+Constrained spare allocation
+  ↓
+Fleet optimization
+  ↓
+Projected fleet availability
+  ↓
+Dashboard explanation + audit trail</pre>
+    <p>
+      The strongest final demonstration is a degradation scenario where the system detects the problem,
+      explains the health change, predicts the consequence, schedules maintenance, allocates a constrained
+      spare and shows the resulting effect on fleet readiness.
+    </p>
+  </section>
+
+  <section>
+    <h2>13. Quick checklist</h2>
+    <table>
+      <thead><tr><th>Check</th><th>Expected</th><th>Who/where</th></tr></thead>
+      <tbody>
+        <tr><td>Provider adapter exists</td><td><code>ml/cmapss/providers.py</code></td><td>GitHub repository</td></tr>
+        <tr><td>Provider test exists</td><td><code>ml/cmapss/providers_test.py</code></td><td>GitHub repository</td></tr>
+        <tr><td>Sequence-aware contract exists</td><td><code>model_version</code> + optional <code>sequence</code></td><td>GitHub repository</td></tr>
+        <tr><td>Telemetry sequence buffer exists</td><td><code>ml/sequence_buffer.py</code> + focused tests</td><td>GitHub repository</td></tr>
+        <tr><td>Roadmap exists</td><td><code>docs/roadmap.md</code></td><td>GitHub repository</td></tr>
+        <tr><td>Raw dataset folders exist</td><td><code>data/raw/cmapss/FD001/</code></td><td>GitHub repository</td></tr>
+        <tr><td>NASA files present</td><td><code>train.txt</code>, <code>test.txt</code>, <code>RUL_test.txt</code></td><td>Your local machine</td></tr>
+        <tr><td>Model trained</td><td><code>fd001_rul.joblib</code></td><td>Your local machine</td></tr>
+        <tr><td>Tests pass</td><td><code>pytest -q</code> succeeds</td><td>Your local machine</td></tr>
+        <tr><td>API runs</td><td>FastAPI on port 8000</td><td>Your local machine</td></tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+
+<footer>
+  FleetAvail Engineering Change Log · This page describes the repository state and implementation work,
+  not certified aviation/defence performance.
+</footer>
+</body>
+</html>
