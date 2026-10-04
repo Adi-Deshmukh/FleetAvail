@@ -54,7 +54,7 @@ class CMapssModelRuntime:
         self,
         model_dir: str | Path = "models/cmapss",
         *,
-        rul_architecture: str = "lstm",
+        rul_architecture: str = "auto",
         window_size: int = WINDOW_SIZE,
     ):
         self.model_dir = Path(model_dir)
@@ -64,59 +64,99 @@ class CMapssModelRuntime:
             lambda: deque(maxlen=self.window_size)
         )
         self.branches: dict[str, LoadedBranch] = {}
+        self.rul_selection = "baseline"
+        self.rul_comparison = None
+        self.rul_selection_reason = "not_loaded"
+        self.rul_load_error = None
         self._load_branches()
 
+    def _comparison_path(self) -> Path:
+        return self.model_dir / "fd001_temporal_rul_comparison.json"
+
+    @staticmethod
+    def _metric_value(entry: dict[str, Any] | None, metric: str) -> float | None:
+        if not isinstance(entry, dict):
+            return None
+        try:
+            value = float(entry.get(metric))
+        except (TypeError, ValueError):
+            return None
+        return value if np.isfinite(value) else None
+
+    @classmethod
+    def select_rul_candidate(cls, comparison: dict[str, Any] | None, *, requested: str = "auto") -> str:
+        """Select the RUL branch using validated FD001 test MAE."""
+        requested = (requested or "auto").lower()
+        if requested in {"baseline", "hist_gradient_boosting", "hgb"}:
+            return "baseline"
+        if requested in {"lstm", "tcn"}:
+            return requested
+        if requested != "auto":
+            raise ValueError("FLEETAVAIL_RUL_MODEL must be auto, baseline, lstm, or tcn")
+
+        comparison = comparison or {}
+        candidates = []
+        baseline_mae = cls._metric_value(comparison.get("baseline"), "mae")
+        if baseline_mae is not None:
+            candidates.append((baseline_mae, "baseline"))
+        for arch in ("lstm", "tcn"):
+            mae = cls._metric_value(comparison.get("models", {}).get(arch), "mae")
+            if mae is not None:
+                candidates.append((mae, arch))
+        return min(candidates, key=lambda item: item[0])[1] if candidates else "baseline"
+
     def _load_branches(self) -> None:
-        # Prefer the temporal model selected by configuration. If it is absent,
-        # fall back to the existing HistGradientBoosting baseline.
-        temporal_path = self.model_dir / f"fd001_{self.rul_architecture}_rul.keras"
-        temporal_meta = temporal_path.with_suffix(".json")
-        if temporal_path.exists() and temporal_meta.exists():
+        """Load the selected RUL branch plus independent risk/anomaly branches."""
+        comparison = None
+        comparison_path = self._comparison_path()
+        if comparison_path.exists():
             try:
-                meta = self._read_json(temporal_meta)
-                scaler_path = meta.get("scaler")
-                if scaler_path and not Path(scaler_path).is_absolute() and not Path(scaler_path).exists():
-                    scaler_path = self.model_dir.parent.parent / scaler_path
-                scaler = joblib.load(scaler_path) if scaler_path else None
-                model = TemporalRULModel.load(
-                    temporal_path,
-                    meta["features"],
-                    int(meta["window"]),
-                    scaler=scaler,
-                    architecture=self.rul_architecture,
-                )
-                self.branches["rul"] = LoadedBranch(
-                    self.rul_architecture.upper(), model, meta, str(temporal_path)
-                )
+                comparison = self._read_json(comparison_path)
             except Exception:
-                pass
+                comparison = None
 
-        baseline_path = self.model_dir / "fd001_rul.joblib"
-        if "rul" not in self.branches and baseline_path.exists():
-            try:
-                model = CMapssRULModel.load(baseline_path)
-                meta_path = baseline_path.with_suffix(".json")
-                meta = self._read_json(meta_path) if meta_path.exists() else {}
-                self.branches["rul"] = LoadedBranch(
-                    "HIST_GRADIENT_BOOSTING", model, meta, str(baseline_path)
-                )
-            except Exception:
-                pass
+        selected = self.select_rul_candidate(comparison, requested=self.rul_architecture)
+        self.rul_selection = selected
+        self.rul_comparison = comparison
+        self.rul_selection_reason = (
+            "explicit_configuration" if self.rul_architecture.lower() != "auto"
+            else "lowest_test_mae"
+        )
 
-        for key, filename, cls in (
-            ("failure", "fd001_failure.joblib", XGBoostFailureRiskModel),
-            ("anomaly", "fd001_isolation_forest.joblib", IsolationForestAnomalyModel),
-        ):
-            path = self.model_dir / filename
-            if not path.exists():
-                continue
-            try:
-                model = cls.load(path)
-                meta_path = path.with_suffix(".json")
-                meta = self._read_json(meta_path) if meta_path.exists() else {}
-                self.branches[key] = LoadedBranch(key.upper(), model, meta, str(path))
-            except Exception:
-                continue
+        if selected in {"lstm", "tcn"}:
+            temporal_path = self.model_dir / f"fd001_{selected}_rul.keras"
+            temporal_meta = temporal_path.with_suffix(".json")
+            if temporal_path.exists() and temporal_meta.exists():
+                try:
+                    meta = self._read_json(temporal_meta)
+                    scaler_path = meta.get("scaler")
+                    if scaler_path and not Path(scaler_path).is_absolute() and not Path(scaler_path).exists():
+                        scaler_path = self.model_dir / Path(scaler_path).name
+                    scaler = joblib.load(scaler_path) if scaler_path else None
+                    model = TemporalRULModel.load(
+                        temporal_path, meta["features"], int(meta["window"]),
+                        scaler=scaler, architecture=selected
+                    )
+                    self.branches["rul"] = LoadedBranch(selected.upper(), model, meta, str(temporal_path))
+                except Exception:
+                    self.rul_load_error = f"Unable to load {selected.upper()} RUL artifact"
+            else:
+                self.rul_load_error = f"Missing {selected.upper()} RUL artifact"
+
+        if "rul" not in self.branches:
+            baseline_path = self.model_dir / "fd001_rul.joblib"
+            if baseline_path.exists():
+                try:
+                    model = CMapssRULModel.load(baseline_path)
+                    meta_path = baseline_path.with_suffix(".json")
+                    meta = self._read_json(meta_path) if meta_path.exists() else {}
+                    self.branches["rul"] = LoadedBranch(
+                        "HIST_GRADIENT_BOOSTING", model, meta, str(baseline_path)
+                    )
+                    if selected != "baseline":
+                        self.rul_selection_reason = "selected_artifact_unavailable_fallback_baseline"
+                except Exception:
+                    self.rul_load_error = "Unable to load baseline RUL artifact"
 
     @staticmethod
     def _read_json(path: Path) -> dict[str, Any]:
@@ -141,6 +181,14 @@ class CMapssModelRuntime:
                 for key, branch in self.branches.items()
             },
             "required_window": self.window_size,
+            "rul_selection": {
+                "requested": self.rul_architecture,
+                "selected": self.rul_selection,
+                "reason": self.rul_selection_reason,
+                "loaded_model": self.branches.get("rul").name if self.branches.get("rul") else None,
+                "comparison": self.rul_comparison,
+                "load_error": self.rul_load_error,
+            },
         }
 
     def normalize_telemetry(self, telemetry: Mapping[str, Any], *, cycle: int) -> dict[str, float]:
