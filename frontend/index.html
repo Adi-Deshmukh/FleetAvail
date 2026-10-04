@@ -36,6 +36,7 @@ button{cursor:pointer}pre{white-space:pre-wrap;overflow:auto;max-height:300px}
 <h3>Model pipeline</h3>
 <div id="models"></div>
 <p class="muted" id="mode"></p>
+<div class="section"><h4>Observability</h4><pre id="observability">Loading…</pre></div>
 </section>
 </div>
 
@@ -99,8 +100,8 @@ function fillSelect(id,rows){
   if(current && rows.some(x=>x.aircraft_id===current))$(id).value=current
 }
 async function loadFleet(){
-  const [summary,rows,models,spares]=await Promise.all([
-    get('/api/fleet/summary'),get('/api/fleet/aircraft'),get('/api/models'),get('/api/spares')
+  const [summary,rows,models,spares,observability]=await Promise.all([
+    get('/api/fleet/summary'),get('/api/fleet/aircraft'),get('/api/models'),get('/api/spares'),get('/api/observability')
   ])
   renderKpis(summary)
   $('fleet').innerHTML=rows.map(x=>{
@@ -109,7 +110,8 @@ async function loadFleet(){
   }).join('')
   fillSelect('aircraftSelect',rows);fillSelect('whatAircraft',rows);fillSelect('maintAircraft',rows)
   $('models').innerHTML=Object.entries(models.branches||{}).map(([k,v])=>'<div class="model"><span>'+k.toUpperCase()+'</span><b>'+v.model+'</b></div>').join('')||'<div>No trained artifacts loaded</div>'
-  $('mode').textContent='Runtime mode: '+models.mode
+  $('mode').textContent='Runtime mode: '+models.mode+' · RUL: '+(models.rul_selection?.selected||'unknown')+' · Phase C: '+(observability.phase_c_version||'unknown')
+  $('observability').textContent=JSON.stringify(observability.metrics,null,2)
   $('spares').textContent=JSON.stringify(spares,null,2)
   await loadDetail()
 }
