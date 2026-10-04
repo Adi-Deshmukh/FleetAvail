@@ -63,6 +63,7 @@ def test_live_telemetry_signal_is_smoothed_without_changing_model_contract(tmp_p
             "anomaly_score": 0.10,
             "confidence": 0.9,
             "data_quality": 1.0,
+            "health_level": "NORMAL",
         },
         {
             "health_score": 0.0,
@@ -71,6 +72,7 @@ def test_live_telemetry_signal_is_smoothed_without_changing_model_contract(tmp_p
             "anomaly_score": 0.90,
             "confidence": 0.6,
             "data_quality": 1.0,
+            "health_level": "DEGRADED",
         },
     ])
 
