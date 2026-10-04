@@ -300,5 +300,10 @@ class CMapssModelRuntime:
         }
 
     def seed_history(self, aircraft_id: str, component: str, rows: list[Mapping[str, Any]]) -> None:
+        """Seed the rolling history without running model inference per row."""
+        history = self.histories[(aircraft_id, component)]
+        history.clear()
         for row in rows[-self.window_size:]:
-            self.predict(aircraft_id, component, row, cycle=int(row.get("cycle", 0) or 0))
+            cycle = int(row.get("cycle", 0) or 0)
+            normalized = self.normalize_telemetry(row, cycle=cycle)
+            history.append(normalized)

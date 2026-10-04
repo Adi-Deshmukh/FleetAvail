@@ -82,7 +82,7 @@ If backend imports fail, run Uvicorn from the repository root.
 If port 8000 is busy:
 python -m uvicorn backend.app.main:app --reload --port 8010
 
-The decision-layer features added in October 2026 do not require TensorFlow or PyTorch. LSTM/TCN training remains a separate optional environment step.
+TensorFlow is included in requirements because the runtime can load LSTM/TCN artifacts. You only need the NASA dataset when training C-MAPSS models locally.
 The digital twin uses a local JSON persistence file by default so the prototype remains runnable without PostgreSQL/Redis. The store API is intentionally replaceable by those services later.
 
 ## Data boundary

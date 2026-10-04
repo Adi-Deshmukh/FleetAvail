@@ -64,7 +64,12 @@ class HealthState:
 
     @property
     def alert_level(self) -> str:
-        """Legacy display value retained for existing API/dashboard consumers."""
+        """Canonical operational level used by API/dashboard consumers."""
+        return self.health_level.value
+
+    @property
+    def legacy_alert_level(self) -> str:
+        """Legacy presentation mapping retained for callers that need SAFE/WARNING."""
         return _LEGACY_ALERT[self.health_level]
 
     def to_dict(self) -> dict[str, Any]:
@@ -80,6 +85,7 @@ class HealthState:
             "health_level": self.health_level.value,
             "operational_state": self.health_level.value,
             "alert_level": self.alert_level,
+            "legacy_alert_level": self.legacy_alert_level,
             "reason_codes": list(self.reason_codes),
         }
 

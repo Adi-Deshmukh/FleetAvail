@@ -39,6 +39,7 @@ def main():
     test = add_failure_label(test, model.horizon)
 
     probabilities = model.predict_proba(test)
+    probability_by_index = probabilities
     metrics = model.evaluate(
         test,
         test["failure_within_horizon"],
@@ -51,7 +52,8 @@ def main():
         .tail(1)
         .copy()
     )
-    terminal["failure_probability"] = probabilities[terminal.index]
+    terminal_positions = terminal.index.to_numpy()
+    terminal["failure_probability"] = probability_by_index[terminal_positions]
     cutoff = model.threshold if args.threshold is None else args.threshold
     terminal["predicted_failure"] = (
         terminal["failure_probability"] >= cutoff

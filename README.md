@@ -21,7 +21,7 @@ FleetAvail is an integration prototype for aircraft health monitoring, predictiv
 - Inventory-constrained spare allocation
 - Current/projected fleet availability planning
 
-The current inference provider is intentionally synthetic/heuristic so the repository runs without proprietary aircraft data or downloaded model weights. It leaves a clean replacement point for C-MAPSS-trained XGBoost/LSTM/TCN models.
+The FastAPI runtime now uses C-MAPSS-trained XGBoost, temporal RUL and Isolation Forest artifacts when they are available, while retaining cold-start and synthetic fallbacks so the repository can run without downloaded model weights.
 
 ## Architecture
 Telemetry + maintenance history -> validation/features -> anomaly + failure-risk + RUL -> health fusion -> digital twin -> maintenance/spares -> fleet availability -> dashboard.
@@ -57,7 +57,7 @@ POST /api/maintenance/recommend
 GET /api/spares
 WS /ws/telemetry
 
-## Current decision layer
+## Current runtime and decision layer
 1. Health Fusion converts health, RUL, failure risk, anomaly, confidence and data quality into NORMAL/WATCH/DEGRADED/CRITICAL.
 2. Digital Twin persists aircraft/component state and lifecycle events locally in atomic JSON.
 3. Maintenance planning schedules risk-driven work within daily maintenance-hour capacity.
@@ -65,7 +65,7 @@ WS /ws/telemetry
 5. Fleet availability projects readiness after feasible maintenance and spare decisions.
 
 ## Next layer
-1. Wire the trained ML branches into real-time inference.
+1. Add model versioning, uncertainty calibration, SHAP explanations, and drift/OOD monitoring.
 2. Add PostgreSQL/Redis persistence behind the existing digital-twin store interface.
 3. Add formal OR-Tools optimisation after the deterministic decision baseline is validated.
 4. Add uncertainty calibration, SHAP explanations and drift/OOD monitoring.

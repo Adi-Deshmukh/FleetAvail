@@ -7,7 +7,8 @@ def test_normal_state_is_typed_and_serializable():
     state = fuse_health_state(0.95, 0.05, 0.99, 0.05, 140, 0.95)
     assert isinstance(state, HealthState)
     assert state.health_level is HealthLevel.NORMAL
-    assert state.alert_level == "SAFE"
+    assert state.alert_level == "NORMAL"
+    assert state.legacy_alert_level == "SAFE"
     assert state.to_dict()["health_level"] == "NORMAL"
 
 
@@ -37,7 +38,8 @@ def test_low_quality_and_confidence_are_reported():
 
 def test_legacy_dict_contains_old_and_new_level_names():
     result = fuse_health(0.95, 0.05, 0.99, 0.05, 140, 0.95)
-    assert result["alert_level"] == "SAFE"
+    assert result["alert_level"] == "NORMAL"
+    assert result["legacy_alert_level"] == "SAFE"
     assert result["health_level"] == "NORMAL"
 
 
