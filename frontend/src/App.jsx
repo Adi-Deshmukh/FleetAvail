@@ -343,7 +343,7 @@ export default function App() {
               <span className={cls("ticker-dot", wsConnected ? "pulse" : "dead")} />
               <span className="ticker-label">
                 {wsConnected
-                  ? `STREAMING: ${lastTelemetry ? `${lastTelemetry.aircraft_id} (${lastTelemetry.component})` : "READY"}`
+                  ? `STREAMING: ${selectedAircraft} · ENGINE`
                   : "STREAM OFFLINE"}
               </span>
             </div>
@@ -1667,16 +1667,22 @@ function MaintenancePage() {
 
 // ----------------- 6. Live Telemetry Page -----------------
 function TelemetryPage({ telemetryHistory, wsConnected, selectedAircraft, aircraftOptions, onAircraftChange }) {
+  const selectedStreamHistory = useMemo(() => {
+    return telemetryHistory.filter(
+      (item) => item.aircraft_id === selectedAircraft && item.component === "ENGINE"
+    );
+  }, [telemetryHistory, selectedAircraft]);
+
   const chartData = useMemo(() => {
-    return [...telemetryHistory].reverse().map((item, i) => ({
+    return [...selectedStreamHistory].reverse().slice(-50).map((item, i) => ({
       idx: i + 1,
-      aircraft: item.aircraft_id,
+      cycle: item.cycle,
       health: item.display_health_score ?? item.health_score ?? 0,
       rul: item.rul_cycles || 0,
       risk: (item.display_failure_probability ?? item.failure_probability ?? 0) * 100,
       anomaly: (item.display_anomaly_score ?? item.anomaly_score ?? 0) * 100,
     }));
-  }, [telemetryHistory]);
+  }, [selectedStreamHistory]);
 
   return (
     <div className="page-grid">
@@ -1684,11 +1690,11 @@ function TelemetryPage({ telemetryHistory, wsConnected, selectedAircraft, aircra
         <div>
           <span className="section-eyebrow">HIGH-FREQUENCY INGESTION</span>
           <h1>Live Telemetry Stream</h1>
-          <p>Direct inspection of raw sensor stream events and instant health classifications.</p>
+          <p>Inspect the selected aircraft stream, fused health outputs, and consecutive inference events.</p>
         </div>
         <div className="telemetry-selector">
-          <label>Aircraft Stream</label>
-          <select value={selectedAircraft} onChange={(e) => onAircraftChange(e.target.value)}>
+          <label>Aircraft</label>
+          <select aria-label="Aircraft stream" value={selectedAircraft} onChange={(e) => onAircraftChange(e.target.value)}>
             {(aircraftOptions.length ? aircraftOptions : [selectedAircraft]).map((id) => (
               <option key={id} value={id}>{id} · ENGINE</option>
             ))}
@@ -1696,14 +1702,14 @@ function TelemetryPage({ telemetryHistory, wsConnected, selectedAircraft, aircra
         </div>
         <div className="live-status-pill">
           <span className={cls("status-dot", wsConnected ? "active" : "inactive")} />
-          <span>{wsConnected ? "STREAM CONNECTED (ws://localhost:8000/ws/telemetry)" : "STREAM DISCONNECTED"}</span>
+          <span>{wsConnected ? `WEBSOCKET CONNECTED · ${selectedAircraft} · ENGINE` : `WEBSOCKET DISCONNECTED · ${selectedAircraft} · ENGINE`}</span>
         </div>
       </div>
 
       {/* Streaming Health Line Chart */}
       <SectionCard
         title="Streaming Multi-Cycle Fused Health Progression"
-        subtitle="Last 50 consecutive telemetry frames parsed in real-time"
+        subtitle={`Last ${Math.min(chartData.length, 50)} consecutive events · ${selectedAircraft} ENGINE`}
       >
         <ChartContainer height={320}>
           <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 10 }}>
@@ -1739,8 +1745,8 @@ function TelemetryPage({ telemetryHistory, wsConnected, selectedAircraft, aircra
       {/* Raw Event Stream Table */}
       <SectionCard
         title="Real-time Telemetry Event Feed"
-        subtitle="Inspecting rolling buffer events with millisecond timestamps"
-        badge={`${telemetryHistory.length} EVENTS RETAINED`}
+        subtitle={`Selected stream: ${selectedAircraft} ENGINE · rolling event buffer`}
+        badge={`${selectedStreamHistory.length} EVENTS RETAINED`}
       >
         <div className="table-responsive">
           <table className="data-table">
@@ -1756,14 +1762,14 @@ function TelemetryPage({ telemetryHistory, wsConnected, selectedAircraft, aircra
               </tr>
             </thead>
             <tbody>
-              {telemetryHistory.length === 0 ? (
+              {selectedStreamHistory.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center text-muted py-4">
-                    Waiting for live telemetry stream events over WebSocket...
+                    Waiting for live telemetry events from the selected aircraft stream over WebSocket...
                   </td>
                 </tr>
               ) : (
-                telemetryHistory.map((item, i) => (
+                selectedStreamHistory.map((item, i) => (
                   <tr key={i}>
                     <td className="code-font text-muted">{item.receivedAt || "Now"}</td>
                     <td>
