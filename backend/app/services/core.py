@@ -104,23 +104,20 @@ class FleetService:
                 unit = units[idx]
                 rows = test[test.unit_id == unit].sort_values("cycle")
                 self.replay_rows[aid] = rows.to_dict("records")
-                self.replay_index[aid] = 0
-                self.runtime.seed_history(
-                    aid,
-                    "ENGINE",
-                    self.replay_rows[aid][-self.runtime.window_size:],
-                )
+                seed = self.replay_rows[aid][:self.runtime.window_size]
+                self.replay_index[aid] = min(self.runtime.window_size - 1, len(self.replay_rows[aid]) - 1)
+                self.runtime.seed_history(aid, "ENGINE", seed)
                 prediction = self.runtime.predict(
                     aid,
                     "ENGINE",
-                    self.replay_rows[aid][-1],
-                    cycle=int(self.replay_rows[aid][-1]["cycle"]),
+                    seed[-1],
+                    cycle=int(seed[-1]["cycle"]),
                 )
                 self._apply_prediction(
                     aid,
                     "ENGINE",
                     prediction,
-                    cycle=int(self.replay_rows[aid][-1]["cycle"]),
+                    cycle=int(seed[-1]["cycle"]),
                 )
         except Exception:
             self.replay_rows = {}
@@ -258,15 +255,24 @@ class FleetService:
         )
         return state.to_dict()
 
+    def operational_status(self, aircraft: Aircraft) -> str:
+        """Return one mutually-exclusive operational state derived from static status + engine health."""
+        engine = self.fused(aircraft, "ENGINE")
+        if aircraft.status == "MAINTENANCE":
+            return "MAINTENANCE"
+        if engine["health_level"] == "CRITICAL":
+            return "CRITICAL"
+        if engine["health_level"] == "DEGRADED" or aircraft.status == "DEGRADED":
+            return "DEGRADED"
+        return "READY"
+
     def fleet_summary(self):
         total = len(self.aircraft)
-        ready = sum(a.status == "READY" for a in self.aircraft.values())
-        degraded = sum(a.status == "DEGRADED" for a in self.aircraft.values())
-        maint = sum(a.status == "MAINTENANCE" for a in self.aircraft.values())
-        critical = sum(
-            self.fused(a, "ENGINE")["health_level"] == "CRITICAL"
-            for a in self.aircraft.values()
-        )
+        statuses = [self.operational_status(a) for a in self.aircraft.values()]
+        ready = statuses.count("READY")
+        degraded = statuses.count("DEGRADED")
+        maint = statuses.count("MAINTENANCE")
+        critical = statuses.count("CRITICAL")
         availability = self.fleet_availability()
         return {
             "total_aircraft": total,
@@ -282,7 +288,7 @@ class FleetService:
         return [
             {
                 "aircraft_id": aircraft.id,
-                "status": aircraft.status,
+                "status": self.operational_status(aircraft),
                 "engine": self.fused(aircraft, "ENGINE"),
             }
             for aircraft in self.aircraft.values()
@@ -292,7 +298,7 @@ class FleetService:
         aircraft = self.aircraft[aircraft_id]
         return {
             "aircraft_id": aircraft_id,
-            "status": aircraft.status,
+            "status": self.operational_status(aircraft),
             "components": {
                 component: self.fused(aircraft, component)
                 for component in COMPONENTS
@@ -571,6 +577,7 @@ class FleetService:
 
         inputs = []
         for aircraft in self.aircraft.values():
+            operational_status = self.operational_status(aircraft)
             plan_rows = [
                 row
                 for row in plan["items"]
@@ -587,7 +594,7 @@ class FleetService:
             inputs.append(
                 AircraftAvailabilityInput(
                     aircraft_id=aircraft.id,
-                    current_status=aircraft.status,
+                    current_status=operational_status,
                     maintenance_day=chosen["scheduled_day"] if chosen else None,
                     maintenance_duration_hours=chosen["duration_hours"] if chosen else 0.0,
                     spare_available=spare_ok,
@@ -645,17 +652,39 @@ class FleetService:
     def spares(self):
         return self.spares_data
 
-    def next_telemetry_event(self):
-        aircraft = self.rng.choice(list(self.aircraft.values()))
-        prediction = self.fused(aircraft, "ENGINE")
+    def next_telemetry_event(self, aircraft_id: str = "AF-001"):
+        """Advance one pinned engine stream and run the same inference path used by REST predictions."""
+        if aircraft_id not in self.aircraft:
+            raise KeyError(aircraft_id)
+
+        rows = self.replay_rows.get(aircraft_id)
+        if rows:
+            index = min(
+                self.replay_index.get(aircraft_id, self.runtime.window_size - 1) + 1,
+                len(rows) - 1,
+            )
+            self.replay_index[aircraft_id] = index
+            telemetry = rows[index]
+        else:
+            telemetry = self._synthetic_telemetry(aircraft_id, "ENGINE")
+
+        twin = self.twin_store.get_or_create(aircraft_id)
+        existing = twin.components.get("ENGINE")
+        cycle = int(telemetry.get("cycle", existing.last_update_cycle + 1 if existing else 1))
+        result = self.predict(aircraft_id, "ENGINE", telemetry)
         return {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "event": "telemetry_update",
-            "aircraft_id": aircraft.id,
+            "aircraft_id": aircraft_id,
             "component": "ENGINE",
-            "health_score": prediction["health_score"],
-            "rul_cycles": prediction["rul_cycles"],
-            "failure_probability": prediction["failure_probability"],
-            "alert_level": prediction["alert_level"],
-            "health_level": prediction["health_level"],
+            "cycle": cycle,
+            "health_score": result["health_score"],
+            "rul_cycles": result["rul_cycles"],
+            "failure_probability": result["failure_probability"],
+            "anomaly_score": result["anomaly_score"],
+            "confidence": result["confidence"],
+            "data_quality": result["data_quality"],
+            "health_level": result["health_level"],
+            "operational_state": self.operational_status(self.aircraft[aircraft_id]),
+            "prediction_status": result.get("observability", {}).get("prediction_status", "READY"),
         }
