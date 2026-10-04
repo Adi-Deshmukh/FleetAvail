@@ -195,7 +195,24 @@ class FleetService:
             cycle if cycle is not None
             else (existing.last_update_cycle + 1 if existing else 1)
         )
-        self._sync_twin(aid, component, prediction, resolved_cycle)
+
+        # The ML runtime returns model signals, while health_score is an
+        # authoritative fusion-layer output. Recompute it from the values
+        # just written to the aircraft state before synchronizing the twin.
+        fused = self.fused(self.aircraft[aid], component)
+        self._sync_twin(
+            aid,
+            component,
+            {
+                "health_score": fused["health_score"],
+                "rul_cycles": fused["rul_cycles"],
+                "failure_probability": fused["failure_probability"],
+                "anomaly_score": fused["anomaly_score"],
+                "confidence": fused["confidence"],
+                "data_quality": fused["data_quality"],
+            },
+            resolved_cycle,
+        )
 
     def _sync_twin(
         self,
