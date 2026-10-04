@@ -51,7 +51,13 @@ def test_api_exposes_phase_c_observability_contract(tmp_path, monkeypatch):
     from backend.app.services.core import FleetService
     from digital_twin.state import DigitalTwinStore
 
-    monkeypatch.setattr(main_module, "service", FleetService(twin_store=DigitalTwinStore(tmp_path / "twin.json")))
+    test_service = FleetService(
+        twin_store=DigitalTwinStore(tmp_path / "twin.json")
+    )
+    # Local C-MAPSS replay data may pre-seed 30 samples during service startup.
+    # Clear it so this test always exercises the documented cold-start contract.
+    test_service.runtime.histories[("AF-001", "ENGINE")].clear()
+    monkeypatch.setattr(main_module, "service", test_service)
     client = TestClient(main_module.app)
     response = client.post("/api/predict", json={
         "aircraft_id": "AF-001",
