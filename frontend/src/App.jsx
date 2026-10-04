@@ -747,9 +747,9 @@ function FleetMonitorPage() {
           tone="good"
         />
         <StatCard
-          title="Blocked Units"
-          value={availability?.blocked_aircraft?.length ?? 0}
-          detail={availability?.blocked_aircraft?.join(", ") || "None"}
+          title="Currently Blocked Units"
+          value={availability?.current_blocked_aircraft?.length ?? availability?.blocked_aircraft?.length ?? 0}
+          detail={availability?.current_blocked_aircraft?.join(", ") || availability?.blocked_aircraft?.join(", ") || "None"}
           icon={ShieldAlert}
           tone="bad"
         />
