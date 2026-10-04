@@ -155,6 +155,26 @@ class FleetService:
     ):
         x = self.aircraft[aid].components[component]
         if prediction.get("rul_cycles") is None:
+            current = self.fused(self.aircraft[aid], component)
+            twin = self.twin_store.get_or_create(aid)
+            existing = twin.components.get(component)
+            resolved_cycle = int(
+                cycle if cycle is not None
+                else (existing.last_update_cycle + 1 if existing else 1)
+            )
+            self._sync_twin(
+                aid,
+                component,
+                {
+                    "health_score": current["health_score"],
+                    "rul_cycles": current["rul_cycles"],
+                    "failure_probability": current["failure_probability"],
+                    "anomaly_score": current["anomaly_score"],
+                    "confidence": current["confidence"],
+                    "data_quality": current["data_quality"],
+                },
+                resolved_cycle,
+            )
             return
         risk = prediction["failure_probability"]
         anomaly = prediction["anomaly_score"]
