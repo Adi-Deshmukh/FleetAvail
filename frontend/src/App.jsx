@@ -511,6 +511,16 @@ function OverviewPage({ lastTelemetry, telemetryHistory, selectedAircraft, aircr
           title="Live Telemetry Health Signal"
           subtitle={"Selected stream: " + selectedAircraft + " ENGINE · 1-second updates · same inference path as /api/predict"}
           badge={lastTelemetry ? lastTelemetry.aircraft_id + " · CYCLE " + (lastTelemetry.cycle ?? "—") : "LISTENING"}
+          action={
+            <div className="telemetry-selector">
+              <label>Aircraft</label>
+              <select value={selectedAircraft} onChange={(e) => onAircraftChange(e.target.value)}>
+                {(aircraftOptions.length ? aircraftOptions : [selectedAircraft]).map((id) => (
+                  <option key={id} value={id}>{id}</option>
+                ))}
+              </select>
+            </div>
+          }
         >
           {sparklineData.length > 0 ? (
             <>
