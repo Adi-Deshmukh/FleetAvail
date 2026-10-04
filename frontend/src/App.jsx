@@ -69,7 +69,7 @@ const fmt = (v, d = 1) => (v == null || Number.isNaN(Number(v)) ? "—" : Number
 const pct = (v) => (v == null ? "—" : ((Number(v) <= 1 ? Number(v) * 100 : Number(v)).toFixed(1) + "%"));
 const cls = (...x) => x.filter(Boolean).join(" ");
 const statusBadge = (s) => String(s || "UNKNOWN").toUpperCase();
-const LIVE_AIRCRAFT = "AF-001";
+const DEFAULT_AIRCRAFT = "AF-001";
 
 function Badge({ value, variant }) {
   const v = String(value || "UNKNOWN").toLowerCase().replace(/_/g, "-");
@@ -155,6 +155,8 @@ export default function App() {
   const [lastTelemetry, setLastTelemetry] = useState(null);
   const [telemetryHistory, setTelemetryHistory] = useState([]);
   const [wsConnected, setWsConnected] = useState(false);
+  const [selectedAircraft, setSelectedAircraft] = useState(DEFAULT_AIRCRAFT);
+  const [aircraftOptions, setAircraftOptions] = useState([]);
   const wsRef = useRef(null);
 
   // Poll system health
@@ -177,12 +179,27 @@ export default function App() {
     };
   }, []);
 
+  // Load selectable aircraft IDs for the live telemetry stream.
+  useEffect(() => {
+    apiGet("/api/fleet/aircraft")
+      .then((rows) => {
+        const ids = rows.map((row) => row.aircraft_id).filter(Boolean);
+        setAircraftOptions(ids);
+      })
+      .catch(() => setAircraftOptions([]));
+  }, []);
+
+  useEffect(() => {
+    setTelemetryHistory([]);
+    setLastTelemetry(null);
+  }, [selectedAircraft]);
+
   // WebSocket connection for real-time telemetry stream
   useEffect(() => {
     let reconnectTimer;
     const connect = () => {
       try {
-        const ws = new WebSocket(websocketUrl(LIVE_AIRCRAFT));
+        const ws = new WebSocket(websocketUrl(selectedAircraft));
         wsRef.current = ws;
 
         ws.onopen = () => {
@@ -221,7 +238,7 @@ export default function App() {
       clearTimeout(reconnectTimer);
       if (wsRef.current) wsRef.current.close();
     };
-  }, []);
+  }, [selectedAircraft]);
 
   return (
     <div className="app-shell">
@@ -316,12 +333,12 @@ export default function App() {
 
         <main className="content-container">
           <Routes>
-            <Route path="/" element={<OverviewPage lastTelemetry={lastTelemetry} telemetryHistory={telemetryHistory} />} />
+            <Route path="/" element={<OverviewPage lastTelemetry={lastTelemetry} telemetryHistory={telemetryHistory} selectedAircraft={selectedAircraft} aircraftOptions={aircraftOptions} onAircraftChange={setSelectedAircraft} />} />
             <Route path="/fleet" element={<FleetMonitorPage />} />
             <Route path="/aircraft/:aircraftId" element={<AircraftDetailPage />} />
             <Route path="/ml" element={<MLModelsPage />} />
             <Route path="/maintenance" element={<MaintenancePage />} />
-            <Route path="/telemetry" element={<TelemetryPage telemetryHistory={telemetryHistory} wsConnected={wsConnected} />} />
+            <Route path="/telemetry" element={<TelemetryPage telemetryHistory={telemetryHistory} wsConnected={wsConnected} selectedAircraft={selectedAircraft} aircraftOptions={aircraftOptions} onAircraftChange={setSelectedAircraft} />} />
           </Routes>
         </main>
       </div>
@@ -330,7 +347,7 @@ export default function App() {
 }
 
 // ----------------- 1. Overview Page -----------------
-function OverviewPage({ lastTelemetry, telemetryHistory }) {
+function OverviewPage({ lastTelemetry, telemetryHistory, selectedAircraft, aircraftOptions, onAircraftChange }) {
   const [summary, setSummary] = useState(null);
   const [fleet, setFleet] = useState([]);
   const [availability, setAvailability] = useState(null);
@@ -375,7 +392,7 @@ function OverviewPage({ lastTelemetry, telemetryHistory }) {
 
   const sparklineData = useMemo(() => {
     return telemetryHistory
-      .filter((item) => item.aircraft_id === LIVE_AIRCRAFT && item.component === "ENGINE")
+      .filter((item) => item.aircraft_id === selectedAircraft && item.component === "ENGINE")
       .slice(0, 20)
       .reverse()
       .map((item, idx) => ({
@@ -492,7 +509,7 @@ function OverviewPage({ lastTelemetry, telemetryHistory }) {
         {/* Live Streaming Sparkline */}
         <SectionCard
           title="Live Telemetry Health Signal"
-          subtitle={"Pinned stream: " + LIVE_AIRCRAFT + " ENGINE · 1-second updates · same inference path as /api/predict"}
+          subtitle={"Selected stream: " + selectedAircraft + " ENGINE · 1-second updates · same inference path as /api/predict"}
           badge={lastTelemetry ? lastTelemetry.aircraft_id + " · CYCLE " + (lastTelemetry.cycle ?? "—") : "LISTENING"}
         >
           {sparklineData.length > 0 ? (
@@ -520,13 +537,13 @@ function OverviewPage({ lastTelemetry, telemetryHistory }) {
               </ChartContainer>
               <p className="telemetry-signal-note">
                 Health is the fused score. Failure risk is the model probability of failure. Anomaly is the normalized anomaly signal.
-                The stream stays on {LIVE_AIRCRAFT} ENGINE so the chart represents one aircraft over time rather than mixing airframes.
+                The stream stays on {selectedAircraft} ENGINE so the chart represents one aircraft over time rather than mixing airframes.
               </p>
             </>
           ) : (
             <div className="state-empty" style={{ height: 240 }}>
               <Wifi size={24} className="accent-icon" />
-              <p>Waiting for {LIVE_AIRCRAFT} ENGINE telemetry...</p>
+              <p>Waiting for {selectedAircraft} ENGINE telemetry...</p>
             </div>
           )}
         </SectionCard>
@@ -1521,7 +1538,7 @@ function MaintenancePage() {
 }
 
 // ----------------- 6. Live Telemetry Page -----------------
-function TelemetryPage({ telemetryHistory, wsConnected }) {
+function TelemetryPage({ telemetryHistory, wsConnected, selectedAircraft, aircraftOptions, onAircraftChange }) {
   const chartData = useMemo(() => {
     return [...telemetryHistory].reverse().map((item, i) => ({
       idx: i + 1,
@@ -1539,6 +1556,14 @@ function TelemetryPage({ telemetryHistory, wsConnected }) {
           <span className="section-eyebrow">HIGH-FREQUENCY INGESTION</span>
           <h1>Live Telemetry Stream</h1>
           <p>Direct inspection of raw sensor stream events and instant health classifications.</p>
+        </div>
+        <div className="telemetry-selector">
+          <label>Aircraft Stream</label>
+          <select value={selectedAircraft} onChange={(e) => onAircraftChange(e.target.value)}>
+            {(aircraftOptions.length ? aircraftOptions : [selectedAircraft]).map((id) => (
+              <option key={id} value={id}>{id} · ENGINE</option>
+            ))}
+          </select>
         </div>
         <div className="live-status-pill">
           <span className={cls("status-dot", wsConnected ? "active" : "inactive")} />
