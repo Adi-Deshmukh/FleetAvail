@@ -34,6 +34,8 @@ def calculate_fleet_availability(
             "projected_availability_pct": 0.0,
             "horizon_days": horizon_days,
             "blocked_aircraft": [],
+            "current_blocked_aircraft": [],
+            "projected_blocked_aircraft": [],
             "recovered_aircraft": [],
         }
 
@@ -68,6 +70,8 @@ def calculate_fleet_availability(
         "projected_availability_pct": round(100.0 * projected_available / total, 1),
         "horizon_days": horizon_days,
         "blocked_aircraft": sorted(projected_blocked),
+        "current_blocked_aircraft": sorted(blocked),
+        "projected_blocked_aircraft": sorted(projected_blocked),
         "recovered_aircraft": sorted(recovered),
     }
 
