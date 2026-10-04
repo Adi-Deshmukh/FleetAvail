@@ -2,7 +2,9 @@ name: audit-validation
 
 on:
   push:
-    branches: ["fix/audit-2026-10-04"]
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
 
 jobs:
   test:
