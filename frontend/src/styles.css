@@ -939,6 +939,35 @@ button, input, select {
   margin-left: auto;
 }
 
+.fleet-state-summary {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(70px, 1fr));
+  gap: 10px;
+}
+.fleet-state-summary div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.fleet-state-summary span {
+  font-size: 8px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.fleet-state-summary strong {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+@media (max-width: 520px) {
+  .fleet-state-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Telemetry Live Badge */
 .live-status-pill {
   display: flex;
