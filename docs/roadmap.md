@@ -15,7 +15,7 @@ This roadmap follows the completion chain in order. Each layer is independently 
 | 9 | Maintenance optimizer | ✅ Constraint-aware 7-day scheduling with risk/RUL/mission priority, duration and spare constraints |
 | 10 | Spare allocation | ✅ Priority-aware allocation that never exceeds compatible inventory and reports unmet demand |
 | 11 | Fleet availability | ✅ Current/projected readiness calculation using maintenance schedules and spare feasibility |
-| 12 | MLOps/explainability | ⏳ Versioning, drift, uncertainty, SHAP, prediction monitoring and audit trail |
+| 12 | MLOps/explainability | ✅ FD001 provenance, latency/failure metrics, audit trail, local explanations, cold-start/degraded-data semantics, input/output drift and frontend observability |
 | 13 | Final frontend | ⏳ React/Next.js + Three.js operational dashboard |
 
 ## Current architecture
@@ -82,16 +82,21 @@ The backend uses the unified C-MAPSS runtime for ENGINE inference when trained a
 
 Non-engine components remain decision-layer/heuristic states because the current trained C-MAPSS models are engine-focused. They must not be represented as if they were trained component-specific models.
 
+## Phase C — operational hardening and MLOps/explainability
+
+Completed:
+- Added model/data provenance to engine predictions and audit records.
+- Added bounded inference latency and failure metrics.
+- Added a 500-record in-process prediction audit buffer and `/api/audit`.
+- Added model-agnostic local RUL/failure-risk explanations with explicit limitations.
+- Added explicit `COLD_START`, `READY`, `DEGRADED_DATA` and `ERROR` semantics.
+- Added telemetry completeness/validity fields and quality scoring.
+- Added input drift and rolling prediction-output drift monitoring.
+- Added `/api/observability` and frontend observability display.
+- Added automated Phase C tests and `docs/phase-c.md`.
+
+Phase C remains intentionally dependency-free at the monitoring layer. It does not claim SHAP attribution, persistent compliance-grade audit storage, Prometheus/OpenTelemetry deployment, population-level drift certification, or aviation safety certification.
+
 ## Next implementation target
 
-After local FD001 end-to-end validation, move to Phase C — operational hardening and MLOps/explainability:
-
-1. prediction/model provenance
-2. inference latency and failure metrics
-3. prediction audit records
-4. RUL/failure-risk explainability
-5. explicit cold-start and degraded-data API semantics
-6. data/model drift monitoring
-7. frontend observability
-
-Only after the FD001 completion pass should the pipeline be generalized to FD002, FD003 and FD004.
+Phase C is complete. The next target is the final FD001 completion/validation pass and model improvement. Only after FD001 is complete and improved should the pipeline be generalized to FD002, FD003 and FD004.
