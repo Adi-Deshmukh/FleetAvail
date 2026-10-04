@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ml.cmapss.data import load_cmapss
-from ml.cmapss.failure import (
+from ml.cmapss.failure_risk import (
     XGBoostFailureRiskModel,
     add_failure_label,
     engine_aware_split,
@@ -14,7 +14,13 @@ from ml.cmapss.failure import (
 from ml.cmapss.features import add_temporal_features, clean, drop_constant_features
 
 
-def preprocess_training_splits(train_raw, calibration_raw, holdout_raw):
+def preprocess_training_splits(
+    train_raw,
+    calibration_raw,
+    holdout_raw,
+    *,
+    horizon: int,
+):
     train = clean(train_raw)
     calibration = clean(calibration_raw)
     holdout = clean(holdout_raw)
@@ -27,26 +33,30 @@ def preprocess_training_splits(train_raw, calibration_raw, holdout_raw):
     holdout = add_temporal_features(holdout, base_features)
 
     feature_columns = [
-        c for c in train.columns
-        if c not in {"unit_id", "cycle", "rul"}
+        c for c in train.columns if c not in {"unit_id", "cycle", "rul"}
     ]
-    train = add_failure_label(train)
-    calibration = add_failure_label(calibration)
-    holdout = add_failure_label(holdout)
+    train = add_failure_label(train, horizon)
+    calibration = add_failure_label(calibration, horizon)
+    holdout = add_failure_label(holdout, horizon)
     return train, calibration, holdout, base_features, feature_columns
 
 
-def preprocess_official_test(test_raw, base_features):
+def preprocess_official_test(test_raw, base_features, horizon):
     test = clean(test_raw)
     test = test[["unit_id", "cycle", "rul"] + base_features].copy()
-    return add_temporal_features(test, base_features)
+    test = add_temporal_features(test, base_features)
+    return add_failure_label(test, horizon)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Train the FleetAvail XGBoost failure-risk model on NASA C-MAPSS."
+        description="Train FleetAvail's XGBoost failure-risk model on NASA C-MAPSS."
     )
-    parser.add_argument("--subset", default="FD001", choices=["FD001", "FD002", "FD003", "FD004"])
+    parser.add_argument(
+        "--subset",
+        default="FD001",
+        choices=["FD001", "FD002", "FD003", "FD004"],
+    )
     parser.add_argument("--horizon", type=int, default=30)
     parser.add_argument("--raw-dir", default="data/raw/cmapss")
     parser.add_argument("--test-fraction", type=float, default=0.20)
@@ -67,8 +77,13 @@ def main():
         random_seed=args.seed,
     )
 
-    train, calibration, holdout, base_features, feature_columns = preprocess_training_splits(
-        train_raw, calibration_raw, holdout_raw
+    train, calibration, holdout, base_features, feature_columns = (
+        preprocess_training_splits(
+            train_raw,
+            calibration_raw,
+            holdout_raw,
+            horizon=args.horizon,
+        )
     )
 
     model = XGBoostFailureRiskModel.fit(
@@ -87,19 +102,23 @@ def main():
         holdout["failure_within_horizon"],
     )
 
-    model.horizon = args.horizon
-    model.metadata.update({
-        "dataset": args.subset,
-        "base_features": base_features,
-        "temporal_windows": [5, 10, 20],
-        "engine_aware_split": True,
-        "calibration_fraction": args.calibration_fraction,
-        "holdout_fraction": args.test_fraction,
-        "holdout_metrics": holdout_metrics,
-    })
+    model.metadata.update(
+        {
+            "dataset": args.subset,
+            "base_features": base_features,
+            "temporal_windows": [5, 10, 20],
+            "engine_aware_split": True,
+            "calibration_fraction": args.calibration_fraction,
+            "holdout_fraction": args.test_fraction,
+            "holdout_metrics": holdout_metrics,
+        }
+    )
 
-    official_test = preprocess_official_test(raw_test, base_features)
-    official_test = add_failure_label(official_test, args.horizon)
+    official_test = preprocess_official_test(
+        raw_test,
+        base_features,
+        args.horizon,
+    )
     official_metrics = model.evaluate(
         official_test,
         official_test["failure_within_horizon"],
@@ -116,14 +135,19 @@ def main():
         encoding="utf-8",
     )
 
-    print(json.dumps({
-        "model": str(output),
-        "dataset": args.subset,
-        "horizon_cycles": args.horizon,
-        "holdout_metrics": holdout_metrics,
-        "official_test_metrics": official_metrics,
-        "feature_count": len(feature_columns),
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "model": str(output),
+                "dataset": args.subset,
+                "horizon_cycles": args.horizon,
+                "holdout_metrics": holdout_metrics,
+                "official_test_metrics": official_metrics,
+                "feature_count": len(feature_columns),
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":
