@@ -11,7 +11,7 @@ def load_split(root,split):
     if not path.exists(): raise FileNotFoundError(f"Missing {path}. Download the official NASA C-MAPSS dataset and place it under data/raw/cmapss/.")
     return read_txt(path)
 def load_rul(root,split):
-    path=Path(root)/f"RUL_{split.replace('train','')}.txt"
+    path=Path(root)/f"{split}.txt"
     if not path.exists(): raise FileNotFoundError(f"Missing {path}")
     return pd.read_csv(path,header=None,names=["rul"])
 def add_train_rul(df):
