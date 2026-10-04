@@ -55,7 +55,7 @@ class FleetService:
         self.twin_store = twin_store or DigitalTwinStore()
         self.runtime = CMapssModelRuntime(
             os.getenv("FLEETAVAIL_MODEL_DIR", "models/cmapss"),
-            rul_architecture=os.getenv("FLEETAVAIL_RUL_MODEL", "lstm").lower(),
+            rul_architecture=os.getenv("FLEETAVAIL_RUL_MODEL", "auto").lower(),
         )
         self.latest_predictions: dict[tuple[str, str], dict] = {}
         self.replay_rows: dict[str, list[dict]] = {}
