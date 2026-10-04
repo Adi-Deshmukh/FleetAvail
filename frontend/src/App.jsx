@@ -776,6 +776,12 @@ function FleetMonitorPage() {
               <Bar dataKey="rul" fill="#4fa8e8" radius={[4, 4, 0, 0]} name="RUL Cycles" />
             </BarChart>
           </ChartContainer>
+          ) : (
+            <div className="state-empty" style={{ height: 280 }}>
+              <Database size={24} className="accent-icon" />
+              <p>Benchmark artifact unavailable. No model comparison values are displayed.</p>
+            </div>
+          )}
         </SectionCard>
 
         <SectionCard
@@ -1206,25 +1212,25 @@ function MLModelsPage() {
   }, [fetchModels]);
 
   const benchmarkChart = useMemo(() => {
-    if (!modelsData?.rul_selection?.comparison) return [];
-    const comp = modelsData.rul_selection.comparison;
+    const comp = modelsData?.rul_selection?.comparison;
+    if (!comp?.baseline || !comp?.models) return [];
     return [
       {
         model: "HistGradientBoosting",
-        MAE: comp.baseline?.mae || 30.8,
-        RMSE: comp.baseline?.rmse || 45.1,
+        MAE: comp.baseline.mae,
+        RMSE: comp.baseline.rmse,
       },
       {
         model: "LSTM (Deep Recurrent)",
-        MAE: comp.models?.lstm?.mae || 32.45,
-        RMSE: comp.models?.lstm?.rmse || 46.28,
+        MAE: comp.models.lstm?.mae,
+        RMSE: comp.models.lstm?.rmse,
       },
       {
         model: "TCN (Temporal Conv)",
-        MAE: comp.models?.tcn?.mae || 33.54,
-        RMSE: comp.models?.tcn?.rmse || 47.39,
+        MAE: comp.models.tcn?.mae,
+        RMSE: comp.models.tcn?.rmse,
       },
-    ];
+    ].filter((item) => Number.isFinite(item.MAE) && Number.isFinite(item.RMSE));
   }, [modelsData]);
 
   if (loading && !modelsData) return <Spinner text="Loading ML architecture metadata..." />;
@@ -1278,9 +1284,10 @@ function MLModelsPage() {
       <div className="grid-2-cols">
         <SectionCard
           title="Model Performance Comparison (MAE / RMSE)"
-          subtitle="Benchmarked on NASA C-MAPSS FD001 test split (lower is better)"
+          subtitle="Backend evaluation artifact only — no fabricated fallback metrics"
           badge="FD001 EVALUATION"
         >
+          {benchmarkChart.length > 0 ? (
           <ChartContainer height={280}>
             <BarChart data={benchmarkChart} margin={{ top: 15, right: 15, left: -15, bottom: 15 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#16293d" vertical={false} />
