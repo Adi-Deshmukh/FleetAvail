@@ -520,6 +520,11 @@ class FleetService:
         return result
 
     def record_maintenance(self, aircraft_id, component, action, cycle):
+        if aircraft_id not in self.aircraft:
+            raise KeyError(aircraft_id)
+        if component not in COMPONENTS:
+            raise ValueError(f"Unsupported component: {component}")
+
         self.aircraft[aircraft_id].status = "READY"
         state = self.twin_store.record_maintenance(
             aircraft_id,
@@ -527,6 +532,18 @@ class FleetService:
             action=action,
             cycle=cycle,
         )
+        component_state = self.aircraft[aircraft_id].components[component]
+        component_state.update({
+            "health": state.health,
+            "rul": state.rul_cycles,
+            "risk": state.failure_probability,
+            "anomaly": state.anomaly_score,
+            "confidence": state.confidence,
+            "data_quality": state.data_quality,
+            "model_mode": "maintenance_reset",
+            "model_version": "MAINTENANCE_RESET_V1",
+            "window_ready": False,
+        })
         return {
             "aircraft_id": aircraft_id,
             "component": component,
