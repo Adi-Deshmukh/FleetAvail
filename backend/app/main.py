@@ -196,10 +196,14 @@ def projected_availability(x: PlanningOptions):
 
 @app.websocket("/ws/telemetry")
 async def ws(socket: WebSocket):
+    aircraft_id = socket.query_params.get("aircraft_id", "AF-001").upper()
+    if aircraft_id not in service.aircraft:
+        await socket.close(code=1008, reason="Unknown aircraft")
+        return
     await socket.accept()
     try:
         while True:
-            await socket.send_text(json.dumps(service.next_telemetry_event()))
+            await socket.send_text(json.dumps(service.next_telemetry_event(aircraft_id)))
             await asyncio.sleep(1)
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
