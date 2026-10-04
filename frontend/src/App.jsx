@@ -69,6 +69,7 @@ const fmt = (v, d = 1) => (v == null || Number.isNaN(Number(v)) ? "—" : Number
 const pct = (v) => (v == null ? "—" : ((Number(v) <= 1 ? Number(v) * 100 : Number(v)).toFixed(1) + "%"));
 const cls = (...x) => x.filter(Boolean).join(" ");
 const statusBadge = (s) => String(s || "UNKNOWN").toUpperCase();
+const LIVE_AIRCRAFT = "AF-001";
 
 function Badge({ value, variant }) {
   const v = String(value || "UNKNOWN").toLowerCase().replace(/_/g, "-");
@@ -181,7 +182,7 @@ export default function App() {
     let reconnectTimer;
     const connect = () => {
       try {
-        const ws = new WebSocket(websocketUrl());
+        const ws = new WebSocket(websocketUrl(LIVE_AIRCRAFT));
         wsRef.current = ws;
 
         ws.onopen = () => {
@@ -374,13 +375,16 @@ function OverviewPage({ lastTelemetry, telemetryHistory }) {
 
   const sparklineData = useMemo(() => {
     return telemetryHistory
-      .slice(0, 15)
+      .filter((item) => item.aircraft_id === LIVE_AIRCRAFT && item.component === "ENGINE")
+      .slice(0, 20)
       .reverse()
       .map((item, idx) => ({
         idx: idx + 1,
-        health: item.health_score || 0,
-        rul: item.rul_cycles || 0,
-        aircraft: item.aircraft_id,
+        cycle: item.cycle,
+        health: Number(item.health_score || 0),
+        risk: Number(item.failure_probability || 0) * 100,
+        anomaly: Number(item.anomaly_score || 0) * 100,
+        state: item.health_level || "UNKNOWN",
       }));
   }, [telemetryHistory]);
 
@@ -488,31 +492,41 @@ function OverviewPage({ lastTelemetry, telemetryHistory }) {
         {/* Live Streaming Sparkline */}
         <SectionCard
           title="Live Telemetry Health Signal"
-          subtitle="Real-time fused health scores arriving via WebSocket"
-          badge={lastTelemetry ? `${lastTelemetry.aircraft_id} · ${lastTelemetry.component}` : "LISTENING"}
+          subtitle={"Pinned stream: " + LIVE_AIRCRAFT + " ENGINE · 1-second updates · same inference path as /api/predict"}
+          badge={lastTelemetry ? lastTelemetry.aircraft_id + " · CYCLE " + (lastTelemetry.cycle ?? "—") : "LISTENING"}
         >
           {sparklineData.length > 0 ? (
-            <ChartContainer height={240}>
-              <AreaChart data={sparklineData}>
-                <defs>
-                  <linearGradient id="healthGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#48d597" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#48d597" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#16293d" vertical={false} />
-                <XAxis dataKey="idx" stroke="#5d758f" />
-                <YAxis domain={[40, 100]} stroke="#5d758f" />
-                <Tooltip
-                  contentStyle={{ background: "#0d1d2e", border: "1px solid #1c3046", borderRadius: "6px" }}
-                />
-                <Area type="monotone" dataKey="health" stroke="#48d597" strokeWidth={2} fillOpacity={1} fill="url(#healthGrad)" name="Health Score" />
-              </AreaChart>
-            </ChartContainer>
+            <>
+              <div className="telemetry-signal-grid">
+                <div><span>Health</span><strong>{fmt(lastTelemetry?.health_score)}</strong></div>
+                <div><span>Failure risk</span><strong>{pct(lastTelemetry?.failure_probability)}</strong></div>
+                <div><span>Anomaly</span><strong>{pct(lastTelemetry?.anomaly_score)}</strong></div>
+                <div><span>Operational state</span><strong>{lastTelemetry?.operational_state || lastTelemetry?.health_level || "—"}</strong></div>
+              </div>
+              <ChartContainer height={210}>
+                <LineChart data={sparklineData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#16293d" vertical={false} />
+                  <XAxis dataKey="cycle" stroke="#5d758f" />
+                  <YAxis domain={[0, 100]} stroke="#5d758f" />
+                  <Tooltip
+                    contentStyle={{ background: "#0d1d2e", border: "1px solid #1c3046", borderRadius: "6px" }}
+                    formatter={(value, name) => [fmt(value) + "%", name]}
+                  />
+                  <Legend />
+                  <Line type="monotone" dataKey="health" stroke="#48d597" strokeWidth={2} dot={false} name="Health %" />
+                  <Line type="monotone" dataKey="risk" stroke="#ff6b7a" strokeWidth={2} dot={false} name="Failure Risk %" />
+                  <Line type="monotone" dataKey="anomaly" stroke="#f2a05f" strokeWidth={2} dot={false} name="Anomaly %" />
+                </LineChart>
+              </ChartContainer>
+              <p className="telemetry-signal-note">
+                Health is the fused score. Failure risk is the model probability of failure. Anomaly is the normalized anomaly signal.
+                The stream stays on {LIVE_AIRCRAFT} ENGINE so the chart represents one aircraft over time rather than mixing airframes.
+              </p>
+            </>
           ) : (
             <div className="state-empty" style={{ height: 240 }}>
               <Wifi size={24} className="accent-icon" />
-              <p>Waiting for WebSocket events...</p>
+              <p>Waiting for {LIVE_AIRCRAFT} ENGINE telemetry...</p>
             </div>
           )}
         </SectionCard>
