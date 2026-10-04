@@ -114,8 +114,8 @@ Failure risk       RUL              Anomaly
       <div class="card"><span class="label">Provider boundary</span><strong class="done">Implemented</strong><p>A trained C-MAPSS RUL artifact can now sit behind a clean provider adapter without changing the decision-layer contract.</p></div>
       <div class="card"><span class="label">Sequence buffer</span><strong class="done">Implemented</strong><p>Feature #2 keeps the latest 30 telemetry samples separately for every aircraft/component pair.</p></div>
       <div class="card"><span class="label">XGBoost</span><strong class="done">Implemented</strong><p>Feature #3 now defines failure within a configurable RUL horizon, trains an XGBoost classifier, calibrates probabilities on held-out engines, and persists metadata.</p></div>
-      <div class="card"><span class="label">Next feature</span><strong class="next">Isolation Forest</strong><p>The next single feature is unsupervised anomaly detection; it will remain separate from the API integration.</p></div>
-      <div class="card"><span class="label">LSTM / TCN</span><strong class="target">Not yet</strong><p>Temporal deep-learning RUL models remain future work and must be compared with the current baseline.</p></div>
+      <div class="card"><span class="label">Isolation Forest</span><strong class="done">Implemented</strong><p>Unsupervised anomaly detection is trained independently and now participates in the backend inference pipeline.</p></div>
+      <div class="card"><span class="label">LSTM / TCN</span><strong class="done">Implemented</strong><p>Temporal RUL models are available offline and can be selected by the backend runtime after comparison with the HistGradientBoosting baseline.</p></div>
       <div class="card"><span class="label">Frontend</span><strong class="target">Existing v1</strong><p>A runnable static dashboard exists under <code>frontend/index.html</code>; the final React/Next.js + Three.js UI comes later.</p></div>
     </div>
   </section>
