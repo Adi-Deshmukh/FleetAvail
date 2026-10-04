@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from ml.cmapss.failure import (
+from ml.cmapss.failure_risk import (
     XGBoostFailureRiskModel,
     add_failure_label,
     classification_metrics,
@@ -14,13 +14,15 @@ def make_data(engines=12, cycles=40):
     for engine in range(1, engines + 1):
         for cycle in range(1, cycles + 1):
             rul = cycles - cycle
-            rows.append({
-                "unit_id": engine,
-                "cycle": cycle,
-                "sensor_a": engine * 0.1 + cycle * 0.02,
-                "sensor_b": float(cycle >= cycles - 8),
-                "rul": rul,
-            })
+            rows.append(
+                {
+                    "unit_id": engine,
+                    "cycle": cycle,
+                    "sensor_a": engine * 0.1 + cycle * 0.02,
+                    "sensor_b": float(cycle >= cycles - 8),
+                    "rul": rul,
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -47,6 +49,7 @@ def test_model_predicts_calibrated_probability_and_round_trips(tmp_path):
     df = add_failure_label(make_data(), horizon=10)
     train, calibration, holdout = engine_aware_split(df, random_seed=7)
     features = ["sensor_a", "sensor_b"]
+
     model = XGBoostFailureRiskModel.fit(
         train,
         train["failure_within_horizon"],
