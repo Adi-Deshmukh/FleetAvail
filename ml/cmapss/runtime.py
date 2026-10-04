@@ -75,6 +75,8 @@ class CMapssModelRuntime:
             try:
                 meta = self._read_json(temporal_meta)
                 scaler_path = meta.get("scaler")
+                if scaler_path and not Path(scaler_path).is_absolute() and not Path(scaler_path).exists():
+                    scaler_path = self.model_dir.parent.parent / scaler_path
                 scaler = joblib.load(scaler_path) if scaler_path else None
                 model = TemporalRULModel.load(
                     temporal_path,
@@ -256,18 +258,19 @@ class CMapssModelRuntime:
         rul, rul_version = self._rul_predict(frame, sequence)
         risk = None
         anomaly = None
+        anomaly_detected = False
+        anomaly_raw = None
 
         failure = self.branches.get("failure")
         if failure is not None:
             risk = float(failure.model.predict_proba(frame.iloc[[-1]])[0])
         anomaly_branch = self.branches.get("anomaly")
         if anomaly_branch is not None:
-            anomaly = float(anomaly_branch.model.score_samples(frame.iloc[[-1]])[0])
-
-        # IF scores are unbounded; normalize them relative to the persisted threshold.
-        if anomaly is not None:
+            anomaly_raw = float(anomaly_branch.model.score_samples(frame.iloc[[-1]])[0])
             threshold = float(anomaly_branch.model.threshold)
-            anomaly = float(np.clip(anomaly / max(threshold, 1e-6) * 0.5, 0.0, 1.0))
+            anomaly_detected = anomaly_raw >= threshold
+            # Convert the raw Isolation Forest score into a bounded fusion signal.
+            anomaly = float(np.clip(0.5 + (anomaly_raw - threshold) / max(abs(threshold), 1e-6), 0.0, 1.0))
 
         risk = 0.05 if risk is None else float(np.clip(risk, 0.0, 1.0))
         anomaly = 0.0 if anomaly is None else float(np.clip(anomaly, 0.0, 1.0))
@@ -291,6 +294,8 @@ class CMapssModelRuntime:
             "rul_cycles": round(float(rul), 2),
             "failure_probability": round(risk, 4),
             "anomaly_score": round(anomaly, 4),
+            "anomaly_detected": anomaly_detected,
+            "anomaly_score_raw": None if anomaly_raw is None else round(anomaly_raw, 6),
             "confidence": round(confidence, 4),
         }
 
