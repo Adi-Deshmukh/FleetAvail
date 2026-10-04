@@ -258,6 +258,48 @@ class FleetService:
         )
         return state.to_dict()
 
+    def fleet_summary(self):
+        total = len(self.aircraft)
+        ready = sum(a.status == "READY" for a in self.aircraft.values())
+        degraded = sum(a.status == "DEGRADED" for a in self.aircraft.values())
+        maint = sum(a.status == "MAINTENANCE" for a in self.aircraft.values())
+        critical = sum(
+            self.fused(a, "ENGINE")["health_level"] == "CRITICAL"
+            for a in self.aircraft.values()
+        )
+        availability = self.fleet_availability()
+        return {
+            "total_aircraft": total,
+            "ready": ready,
+            "degraded": degraded,
+            "maintenance": maint,
+            "critical_aircraft": critical,
+            "current_availability_pct": availability["current_availability_pct"],
+            "projected_7_day_availability_pct": availability["projected_availability_pct"],
+        }
+
+    def aircraft_list(self):
+        return [
+            {
+                "aircraft_id": aircraft.id,
+                "status": aircraft.status,
+                "engine": self.fused(aircraft, "ENGINE"),
+            }
+            for aircraft in self.aircraft.values()
+        ]
+
+    def aircraft_detail(self, aircraft_id):
+        aircraft = self.aircraft[aircraft_id]
+        return {
+            "aircraft_id": aircraft_id,
+            "status": aircraft.status,
+            "components": {
+                component: self.fused(aircraft, component)
+                for component in COMPONENTS
+            },
+            "twin_state": self.twin_store.snapshot(aircraft_id),
+        }
+
     def predict(self, aid, component, telemetry):
         if aid not in self.aircraft:
             raise KeyError(aid)
