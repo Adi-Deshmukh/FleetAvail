@@ -1050,3 +1050,45 @@ button, input, select {
     flex-direction: column;
   }
 }
+
+
+/* Live telemetry signal clarity */
+.telemetry-signal-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.telemetry-signal-grid > div {
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+.telemetry-signal-grid span {
+  display: block;
+  font-size: 9px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: 5px;
+}
+.telemetry-signal-grid strong {
+  font-size: 14px;
+}
+.telemetry-signal-note {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+@media (max-width: 900px) {
+  .telemetry-signal-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 520px) {
+  .telemetry-signal-grid {
+    grid-template-columns: 1fr;
+  }
+}
