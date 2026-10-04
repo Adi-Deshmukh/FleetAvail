@@ -4,6 +4,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import argparse
 import json
+import joblib
 
 from ml.cmapss.data import load_cmapss
 from ml.cmapss.features import clean, drop_constant_features, add_temporal_features, transform
@@ -22,10 +23,12 @@ def main():
     model_path = Path(args.model_dir) / f"{args.subset.lower()}_{args.architecture}_rul.keras"
     meta_path = model_path.with_suffix(".json")
     meta = json.loads(meta_path.read_text())
+    scaler = joblib.load(meta["scaler"])
     model = TemporalRULModel.load(
         model_path,
         meta["features"],
         meta["window"],
+        scaler=scaler,
         architecture=args.architecture,
     )
 
