@@ -63,6 +63,7 @@
       <span class="pill">Target branch: main</span>
       <span class="pill">Changelog added: October 4, 2026</span>
       <span class="pill">Current architecture: backend-first</span>
+      <span class="pill">Feature #2: sequence buffer implemented</span>
     </div>
   </main>
 </header>
@@ -110,7 +111,8 @@ Failure risk       RUL              Anomaly
     <div class="grid">
       <div class="card"><span class="label">C-MAPSS pipeline</span><strong class="done">Implemented</strong><p>Loader, RUL generation, cleaning, constant-feature removal, temporal features, train-only scaling and 30-cycle sequences already exist.</p></div>
       <div class="card"><span class="label">Provider boundary</span><strong class="done">Implemented</strong><p>A trained C-MAPSS RUL artifact can now sit behind a clean provider adapter without changing the decision-layer contract.</p></div>
-      <div class="card"><span class="label">Next feature</span><strong class="next">Sequence Buffer</strong><p>The next engineering step is bounded per-aircraft/component telemetry history for real-time 30-cycle inference.</p></div>
+      <div class="card"><span class="label">Sequence buffer</span><strong class="done">Implemented</strong><p>Feature #2 now keeps the latest 30 telemetry samples separately for every aircraft/component pair.</p></div>
+      <div class="card"><span class="label">Next feature</span><strong class="next">XGBoost</strong><p>The next single feature is the failure-risk model; it will not be mixed into this implementation.</p></div>
       <div class="card"><span class="label">XGBoost</span><strong class="target">Not yet</strong><p>Failure-risk model remains a future feature. No trained failure classifier was added in this change.</p></div>
       <div class="card"><span class="label">LSTM / TCN</span><strong class="target">Not yet</strong><p>Temporal deep-learning RUL models remain future work and must be compared with the current baseline.</p></div>
       <div class="card"><span class="label">Frontend</span><strong class="target">Existing v1</strong><p>A runnable static dashboard exists under <code>frontend/index.html</code>; the final React/Next.js + Three.js UI comes later.</p></div>
@@ -165,6 +167,16 @@ Failure risk       RUL              Anomaly
       </div>
 
       <div class="entry">
+        <div class="title">Feature 2 — 30-cycle telemetry sequence buffer</div>
+        <div class="small">Files: <code>ml/sequence_buffer.py</code> and <code>tests/test_sequence_buffer.py</code></div>
+        <p><b>What it is:</b> A bounded in-memory history for telemetry samples, independently keyed by aircraft and component.</p>
+        <p><b>Simple meaning:</b> The system remembers the latest 30 readings for one aircraft component instead of treating every reading as an isolated value.</p>
+        <p><b>What it does:</b> Validates identifiers and numeric finite sensor values, requires strictly increasing cycle numbers, retains only the latest <code>window_size</code> samples, reports whether a full window exists, returns chronological samples, and converts a complete window into a <code>float32</code> NumPy array in the requested feature order.</p>
+        <p><b>Relationship:</b> This is the input-side foundation for the C-MAPSS provider and future LSTM/TCN inference. It deliberately does not scale data, engineer features, run models, or change the FastAPI behavior yet.</p>
+        <p><b>Tests:</b> Covers rolling-window limits, aircraft/component isolation, feature ordering and array shape, duplicate/out-of-order rejection, invalid values, and incomplete-window handling.</p>
+      </div>
+
+      <div class="entry">
         <div class="title">C-MAPSS raw-data directory structure</div>
         <div class="small">Files: <code>data/raw/cmapss/.gitkeep</code> and <code>data/raw/cmapss/FD001/.gitkeep</code></div>
         <p><b>What it is:</b> Repository placeholders for the required NASA C-MAPSS dataset location.</p>
@@ -213,13 +225,13 @@ Failure risk       RUL              Anomaly
 
   <section>
     <h2>6. How to check each implemented feature</h2>
+    <h3>Feature 2 — Test the telemetry sequence buffer</h3>
+    <pre>pytest -q tests/test_sequence_buffer.py</pre>
+    <p>Expected: all five sequence-buffer tests pass.</p>
+    <p>The tests prove that the buffer keeps only the latest window, isolates aircraft/component histories, preserves chronological order, returns the expected <code>float32</code> shape, rejects duplicate/out-of-order cycles, rejects non-finite values, and blocks full-window access until enough samples exist.</p>
     <h3>A. Check the provider without training</h3>
     <p>Run this from the repository root after dependencies are installed:</p>
-    <pre>python -c "import numpy as np; from ml.cmapss.providers import CMapssRULProvider; from tests import __name__; class Stub: pass"</pre>
-    <p>
-      The easier and recommended check is the automated test below, because it exercises the exact
-      provider boundary with a deterministic stub model.
-    </p>
+    <p>The provider unit test is the recommended deterministic check because it exercises the exact provider boundary without requiring NASA data or a trained artifact.</p>
     <pre>pytest -q ml/cmapss/providers_test.py</pre>
     <p>Expected result: one provider test passes.</p>
 
@@ -277,7 +289,7 @@ python -m uvicorn backend.app.main:app --reload --port 8000</pre>
     <table>
       <thead><tr><th>Feature</th><th>What it will add</th><th>Why it comes later</th></tr></thead>
       <tbody>
-        <tr><td>Telemetry sequence buffer</td><td>Persistent rolling 30-cycle history per aircraft/component.</td><td>Needed before reliable real-time temporal inference.</td></tr>
+        <tr><td>Telemetry sequence buffer</td><td>Persistent rolling 30-cycle history per aircraft/component.</td><td class="status done">Implemented in Feature #2; API wiring comes later.</td></tr>
         <tr><td>XGBoost failure model</td><td>Near-term failure probability.</td><td>Needs a defensible failure label and engine/time-aware validation.</td></tr>
         <tr><td>Isolation Forest</td><td>Unsupervised anomaly score.</td><td>Needs a normal-operation reference and threshold calibration.</td></tr>
         <tr><td>Formal HealthState fusion</td><td>NORMAL/WATCH/DEGRADED/CRITICAL operational state.</td><td>Should combine real model outputs once the branches exist.</td></tr>
@@ -296,7 +308,7 @@ python -m uvicorn backend.app.main:app --reload --port 8000</pre>
   <section>
     <h2>9. Exact implementation order from here</h2>
     <pre>1. C-MAPSS provider boundary                    ✅
-2. 30-cycle telemetry sequence buffer           → NEXT
+2. 30-cycle telemetry sequence buffer           ✅
 3. XGBoost failure-risk model                    → NEXT
 4. Isolation Forest anomaly model                → NEXT
 5. Health Fusion formalization                   → NEXT
@@ -321,10 +333,12 @@ python -m uvicorn backend.app.main:app --reload --port 8000</pre>
         <tr><td>C-MAPSS raw root placeholder</td><td><code>7fcddf4431b056c992d6e54d03800e977c9ee89e</code></td><td><code>data/raw/cmapss/.gitkeep</code></td></tr>
         <tr><td>FD001 placeholder</td><td><code>b9ddd858c7b66e26830e05c45f3bbdb847692c31</code></td><td><code>data/raw/cmapss/FD001/.gitkeep</code></td></tr>
         <tr><td>Sequence-aware prediction contract</td><td><code>177489d2421ff630ac5da651ad07b1c6df8c29de</code></td><td><code>ml/model_contract.py</code></td></tr>
-        <tr><td>Provider model-version propagation</td><td><code>07f52a37eb421243bbe5e4f0ba548f30b56c6006</code></td><td><code>ml/cmapss/providers.py</code></td></tr>
+        <tr><td>Provider model-version propagation</td><td><code>07f52a37eb421243bbe5e4f0ba548f30b56c6006</code></td><td><code>ml/cmapss/providers.py</code></tr>
+        <tr><td>Telemetry sequence buffer</td><td><code>be83a1365a145ab06d17356011cbf2139890c695</code></td><td><code>ml/sequence_buffer.py</code></td></tr>
+        <tr><td>Sequence buffer tests</td><td><code>4def7d96cacbea0b4dc90875eec70f8ec9fc6625</code></td><td><code>tests/test_sequence_buffer.py</code></td></tr>
       </tbody>
     </table>
-    <p class="small">The commits above are the concrete repository changes made in this implementation session before adding this changelog page.</p>
+    <p class="small">The commits above are the concrete repository changes made during the Feature #1 and Feature #2 implementation work. The sequence-buffer commits are the newest changes documented by this page.</p>
   </section>
 
   <section>
@@ -374,6 +388,7 @@ Dashboard explanation + audit trail</pre>
         <tr><td>Provider adapter exists</td><td><code>ml/cmapss/providers.py</code></td><td>GitHub repository</td></tr>
         <tr><td>Provider test exists</td><td><code>ml/cmapss/providers_test.py</code></td><td>GitHub repository</td></tr>
         <tr><td>Sequence-aware contract exists</td><td><code>model_version</code> + optional <code>sequence</code></td><td>GitHub repository</td></tr>
+        <tr><td>Telemetry sequence buffer exists</td><td><code>ml/sequence_buffer.py</code> + focused tests</td><td>GitHub repository</td></tr>
         <tr><td>Roadmap exists</td><td><code>docs/roadmap.md</code></td><td>GitHub repository</td></tr>
         <tr><td>Raw dataset folders exist</td><td><code>data/raw/cmapss/FD001/</code></td><td>GitHub repository</td></tr>
         <tr><td>NASA files present</td><td><code>train.txt</code>, <code>test.txt</code>, <code>RUL_test.txt</code></td><td>Your local machine</td></tr>
