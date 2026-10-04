@@ -51,7 +51,7 @@ def test_api_exposes_phase_c_observability_contract(tmp_path):
     from backend.app.services.core import FleetService
     from digital_twin.state import DigitalTwinStore
 
-    main_module.service = FleetService(twin_store=DigitalTwinStore(tmp_path / "twin.json"))
+    monkeypatch.setattr(main_module, "service", FleetService(twin_store=DigitalTwinStore(tmp_path / "twin.json")))
     client = TestClient(main_module.app)
     response = client.post("/api/predict", json={
         "aircraft_id": "AF-001",
