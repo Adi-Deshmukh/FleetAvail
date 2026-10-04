@@ -198,6 +198,7 @@ Failure risk       RUL              Anomaly
         <tr><td><code>ml/cmapss/sequences.py</code></td><td>Makes 30-cycle windows.</td><td>Training → provider</td><td class="status done">Existing</td></tr>
         <tr><td><code>ml/cmapss/model.py</code></td><td>Current baseline RUL estimator.</td><td>Provider adapter</td><td class="status done">Existing</td></tr>
         <tr><td><code>ml/cmapss/providers.py</code></td><td>Standard doorway to a trained RUL model.</td><td>Future API / sequence buffer</td><td class="status done">Added</td></tr>
+        <tr><td><code>ml/sequence_buffer.py</code></td><td>Keeps the latest bounded telemetry history for one aircraft/component.</td><td>Future real-time inference → C-MAPSS/LSTM/TCN providers</td><td class="status done">Feature #2 added</td></tr>
         <tr><td><code>ml/model_contract.py</code></td><td>Defines the common prediction shape.</td><td>All future model branches</td><td class="status done">Updated</td></tr>
         <tr><td><code>ml/health.py</code></td><td>Converts health/risk/anomaly/RUL information into an operational health result.</td><td>Provider outputs → decisions</td><td class="status done">Existing prototype</td></tr>
         <tr><td><code>backend/app/main.py</code></td><td>FastAPI endpoints exposed to the dashboard.</td><td>Real-time inference</td><td class="status target">Still heuristic</td></tr>
@@ -289,7 +290,7 @@ python -m uvicorn backend.app.main:app --reload --port 8000</pre>
     <table>
       <thead><tr><th>Feature</th><th>What it will add</th><th>Why it comes later</th></tr></thead>
       <tbody>
-        <tr><td>Telemetry sequence buffer</td><td>Persistent rolling 30-cycle history per aircraft/component.</td><td class="status done">Implemented in Feature #2; API wiring comes later.</td></tr>
+        <tr><td>Telemetry sequence buffer</td><td>In-memory rolling 30-cycle history per aircraft/component.</td><td class="status done">Implemented in Feature #2; API wiring comes later.</td></tr>
         <tr><td>XGBoost failure model</td><td>Near-term failure probability.</td><td>Needs a defensible failure label and engine/time-aware validation.</td></tr>
         <tr><td>Isolation Forest</td><td>Unsupervised anomaly score.</td><td>Needs a normal-operation reference and threshold calibration.</td></tr>
         <tr><td>Formal HealthState fusion</td><td>NORMAL/WATCH/DEGRADED/CRITICAL operational state.</td><td>Should combine real model outputs once the branches exist.</td></tr>
