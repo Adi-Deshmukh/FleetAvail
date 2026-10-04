@@ -29,8 +29,9 @@ def test_phase_b_end_to_end_operational_flow():
     models = client.get("/api/models")
     assert models.status_code == 200
     model_state = models.json()
-    assert model_state["runtime_mode"] in {"cmapss", "synthetic_fallback"}
-    assert "rul_model" in model_state
+    assert model_state["mode"] in {"ml", "synthetic_fallback"}
+    assert "rul_selection" in model_state
+    assert "selected" in model_state["rul_selection"]
 
     # 2. Ingest one telemetry observation through the public prediction API.
     prediction = client.post(
