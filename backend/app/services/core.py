@@ -155,6 +155,26 @@ class FleetService:
     ):
         x = self.aircraft[aid].components[component]
         if prediction.get("rul_cycles") is None:
+            current = self.fused(self.aircraft[aid], component)
+            twin = self.twin_store.get_or_create(aid)
+            existing = twin.components.get(component)
+            resolved_cycle = int(
+                cycle if cycle is not None
+                else (existing.last_update_cycle + 1 if existing else 1)
+            )
+            self._sync_twin(
+                aid,
+                component,
+                {
+                    "health_score": current["health_score"],
+                    "rul_cycles": current["rul_cycles"],
+                    "failure_probability": current["failure_probability"],
+                    "anomaly_score": current["anomaly_score"],
+                    "confidence": current["confidence"],
+                    "data_quality": current["data_quality"],
+                },
+                resolved_cycle,
+            )
             return
         risk = prediction["failure_probability"]
         anomaly = prediction["anomaly_score"]
@@ -520,6 +540,11 @@ class FleetService:
         return result
 
     def record_maintenance(self, aircraft_id, component, action, cycle):
+        if aircraft_id not in self.aircraft:
+            raise KeyError(aircraft_id)
+        if component not in COMPONENTS:
+            raise ValueError(f"Unsupported component: {component}")
+
         self.aircraft[aircraft_id].status = "READY"
         state = self.twin_store.record_maintenance(
             aircraft_id,
@@ -527,6 +552,18 @@ class FleetService:
             action=action,
             cycle=cycle,
         )
+        component_state = self.aircraft[aircraft_id].components[component]
+        component_state.update({
+            "health": state.health,
+            "rul": state.rul_cycles,
+            "risk": state.failure_probability,
+            "anomaly": state.anomaly_score,
+            "confidence": state.confidence,
+            "data_quality": state.data_quality,
+            "model_mode": "maintenance_reset",
+            "model_version": "MAINTENANCE_RESET_V1",
+            "window_ready": False,
+        })
         return {
             "aircraft_id": aircraft_id,
             "component": component,

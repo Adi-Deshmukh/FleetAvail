@@ -43,8 +43,9 @@ def main():
         .tail(1)
         .copy()
     )
-    terminal["anomaly_score"] = scores[terminal.index]
-    terminal["is_anomaly"] = predictions[terminal.index]
+    terminal_positions = terminal.index.to_numpy()
+    terminal["anomaly_score"] = scores[terminal_positions]
+    terminal["is_anomaly"] = predictions[terminal_positions]
 
     rows = [
         {
