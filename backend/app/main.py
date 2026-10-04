@@ -11,6 +11,9 @@ from pydantic import BaseModel, Field
 from backend.app.services.core import FleetService
 
 ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_DIST = ROOT / "frontend" / "dist"
+FRONTEND_INDEX = FRONTEND_DIST / "index.html"
+FRONTEND_SOURCE_INDEX = ROOT / "frontend" / "index.html"
 service = FleetService()
 
 app = FastAPI(
@@ -57,7 +60,11 @@ class PlanningOptions(BaseModel):
 
 @app.get("/")
 def root():
-    return FileResponse(ROOT / "frontend" / "index.html")
+    index = FRONTEND_INDEX if FRONTEND_INDEX.exists() else FRONTEND_SOURCE_INDEX
+    return FileResponse(index)
+
+if FRONTEND_DIST.exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="frontend-assets")
 
 
 @app.get("/health")
@@ -207,3 +214,11 @@ async def ws(socket: WebSocket):
             await asyncio.sleep(1)
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
+
+@app.get("/{path:path}")
+def spa_fallback(path: str):
+    """Serve the Vite SPA for browser routes while leaving API routes untouched."""
+    if path.startswith(("api/", "health", "ws/", "assets/", "docs", "redoc", "openapi.json")):
+        raise HTTPException(status_code=404, detail="Not found")
+    index = FRONTEND_INDEX if FRONTEND_INDEX.exists() else FRONTEND_SOURCE_INDEX
+    return FileResponse(index)
