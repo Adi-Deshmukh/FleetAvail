@@ -8,7 +8,7 @@ usable while trained ML branches are added.
 |---|---|---|---|
 | 1 | C-MAPSS baseline/provider | Turns a 30-cycle telemetry window into an RUL estimate | Keep the existing leakage-aware pipeline and expose the trained artifact through a provider boundary |
 | 2 | Telemetry sequence buffer | Maintains bounded per-aircraft/component history | **Implemented:** `ml/sequence_buffer.py` stores the latest 30 valid samples per aircraft/component, enforces cycle ordering, and exposes chronological NumPy windows. |
-| 3 | XGBoost failure model | Predicts near-term failure risk | Create an engine/time-aware failure label, train XGBoost, calibrate probabilities, persist schema + metadata |
+| 3 | XGBoost failure model | Predicts near-term failure risk | **Implemented:** `ml/cmapss/failure_risk.py` defines the RUL-horizon label, engine-aware splits, XGBoost classifier, held-out sigmoid calibration, metrics, persistence and inference; `scripts/train_failure.py` and `scripts/predict_failure.py` provide reproducible commands. |
 | 4 | Isolation Forest | Detects abnormal operating behavior without complete anomaly labels | Train on normal-operation reference data; calibrate threshold and quality/OOD checks |
 | 5 | Health Fusion | Converts RUL, risk, anomaly, confidence and data quality into an operational state | Implement a typed HealthState and explicit NORMAL/WATCH/DEGRADED/CRITICAL rules |
 | 6 | LSTM/TCN RUL | Learns ordered degradation instead of summary-only windows | Train LSTM baseline, TCN alternative, compare against HistGradientBoosting |
@@ -32,11 +32,12 @@ not a claim that XGBoost/LSTM/TCN/Isolation Forest are already trained.
 1. Keep the current C-MAPSS pipeline reproducible. ✅
 2. Add the provider boundary and sequence-aware API contract. ✅
 3. Add the 30-cycle telemetry sequence buffer. ✅
-4. Add XGBoost and Isolation Forest as independent branches.
-4. Fuse the three branches.
-5. Compare LSTM/TCN with the baseline before replacing the RUL branch.
-6. Persist the twin and then optimize maintenance/spares at fleet level.
-7. Upgrade the UI once the backend outputs are stable.
+4. Add XGBoost failure-risk branch. ✅
+5. Add Isolation Forest as an independent branch.
+6. Fuse the model outputs.
+7. Compare LSTM/TCN with the baseline before replacing the RUL branch.
+8. Persist the twin and then optimize maintenance/spares at fleet level.
+9. Upgrade the UI once the backend outputs are stable.
 
 
 ## Feature 2 verification
@@ -48,3 +49,23 @@ pytest -q tests/test_sequence_buffer.py
 ```
 
 This verifies the fixed-size rolling window, aircraft/component isolation, chronological feature ordering, duplicate/out-of-order rejection, finite numeric inputs, and incomplete-window behavior.
+
+
+## Feature 3 verification
+
+XGBoost failure risk is implemented but is not yet connected to the FastAPI runtime. It is trained separately so model validation remains reproducible before API integration.
+
+Install dependencies and run the focused tests:
+
+```powershell
+pytest -q tests/test_failure.py
+```
+
+Train on FD001 after placing the NASA files under `data/raw/cmapss/FD001/`:
+
+```powershell
+python scripts/train_failure.py --subset FD001 --horizon 30
+python scripts/predict_failure.py --subset FD001
+```
+
+The training command writes `models/cmapss/fd001_failure.joblib` and `models/cmapss/fd001_failure.json`.
