@@ -15,7 +15,7 @@ FRONTEND_DIST = ROOT / "frontend" / "dist"
 FRONTEND_INDEX = FRONTEND_DIST / "index.html"
 FRONTEND_SOURCE_INDEX = ROOT / "frontend" / "index.html"
 FALLBACK_INDEX = Path(__file__).resolve().parent / "fallback_dashboard.html"
-TESTING_INDEX = ROOT / "testing" / "index.html"
+TESTING_INDEX = ROOT / "fleetavail" / "testing" / "index.html"
 service = FleetService()
 
 app = FastAPI(
@@ -60,7 +60,6 @@ class PlanningOptions(BaseModel):
     max_daily_hours: float = Field(24, gt=0, le=168)
 
 
-@app.get("/")
 def _dashboard_index() -> Path:
     if FRONTEND_INDEX.exists():
         return FRONTEND_INDEX
