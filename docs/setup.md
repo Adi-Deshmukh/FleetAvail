@@ -87,3 +87,22 @@ The digital twin uses a local JSON persistence file by default so the prototype 
 
 ## Data boundary
 Put downloaded C-MAPSS files under data/raw/. Do not commit proprietary or sensitive aircraft data.
+
+
+## Local dashboard and verification report
+
+Run the FastAPI service as usual:
+
+```powershell
+python -m uvicorn backend.app.main:app --reload --port 8000
+```
+
+Open http://127.0.0.1:8000/. When `frontend/dist` exists, the React/Vite production build is served. When it does not exist, FleetAvail serves a built-in API-backed fallback dashboard instead of the previous blank source HTML. Build the full frontend with:
+
+```powershell
+cd frontend
+npm ci
+npm run build
+```
+
+The captured local verification report is available at http://127.0.0.1:8000/fleetavail/testing and as a static page at `fleetavail/testing/index.html`.
