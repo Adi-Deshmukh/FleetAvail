@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 FRONTEND_INDEX = FRONTEND_DIST / "index.html"
 FRONTEND_SOURCE_INDEX = ROOT / "frontend" / "index.html"
+FALLBACK_INDEX = Path(__file__).resolve().parent / "fallback_dashboard.html"
+TESTING_INDEX = ROOT / "testing" / "index.html"
 service = FleetService()
 
 app = FastAPI(
@@ -59,9 +61,24 @@ class PlanningOptions(BaseModel):
 
 
 @app.get("/")
+def _dashboard_index() -> Path:
+    if FRONTEND_INDEX.exists():
+        return FRONTEND_INDEX
+    if FALLBACK_INDEX.exists():
+        return FALLBACK_INDEX
+    # Keep a hard failure explicit rather than returning a blank page.
+    raise RuntimeError("FleetAvail dashboard assets are missing")
+
+@app.get("/")
 def root():
-    index = FRONTEND_INDEX if FRONTEND_INDEX.exists() else FRONTEND_SOURCE_INDEX
-    return FileResponse(index)
+    return FileResponse(_dashboard_index())
+
+@app.get("/fleetavail/testing")
+@app.get("/fleetavail/testing/")
+def testing_report():
+    if not TESTING_INDEX.exists():
+        raise HTTPException(status_code=404, detail="Testing report not found")
+    return FileResponse(TESTING_INDEX)
 
 if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="frontend-assets")
@@ -220,5 +237,4 @@ def spa_fallback(path: str):
     """Serve the Vite SPA for browser routes while leaving API routes untouched."""
     if path.startswith(("api/", "health", "ws/", "assets/", "docs", "redoc", "openapi.json")):
         raise HTTPException(status_code=404, detail="Not found")
-    index = FRONTEND_INDEX if FRONTEND_INDEX.exists() else FRONTEND_SOURCE_INDEX
-    return FileResponse(index)
+    return FileResponse(_dashboard_index())
