@@ -738,4 +738,5 @@ class FleetService:
             "health_level": result["health_level"],
             "operational_state": self.operational_status(self.aircraft[aircraft_id]),
             "prediction_status": result.get("observability", {}).get("prediction_status", "READY"),
+            "telemetry": telemetry,
         }

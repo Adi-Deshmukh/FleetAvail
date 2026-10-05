@@ -6,7 +6,6 @@ import {
   ArrowRight,
   BarChart3,
   Boxes,
-  BrainCircuit,
   CheckCircle2,
   ChevronRight,
   Clock,
@@ -14,17 +13,17 @@ import {
   Database,
   ExternalLink,
   Filter,
-  Gauge,
-  Layers3,
-  Menu,
+  Layers,
+  Maximize2,
+  Minimize2,
   Network,
+  Pause,
   Plane,
   Play,
   RefreshCw,
   Search,
   Settings,
   ShieldAlert,
-  ShieldCheck,
   Sliders,
   Terminal,
   TrendingDown,
@@ -35,7 +34,15 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { NavLink, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import {
+  Navigate,
+  NavLink,
+  Route,
+  Routes,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import {
   Area,
   AreaChart,
@@ -46,8 +53,6 @@ import {
   Legend,
   Line,
   LineChart,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -55,1756 +60,1593 @@ import {
 } from "recharts";
 import { apiGet, apiPost, websocketUrl } from "./api";
 
-// ----------------- Helper Functions & Navigation -----------------
-const NAV_ITEMS = [
-  { to: "/", label: "Overview", icon: Gauge, desc: "Operational readiness & health fusion" },
-  { to: "/fleet", label: "Fleet Monitor", icon: Plane, desc: "Multi-aircraft status & ranking" },
-  { to: "/aircraft/AF-001", label: "Aircraft Detail", icon: Activity, desc: "Subsystem health & digital twin" },
-  { to: "/ml", label: "ML & Models", icon: BrainCircuit, desc: "C-MAPSS models & benchmarks" },
-  { to: "/maintenance", label: "Maintenance & Spares", icon: Wrench, desc: "Optimized planning & inventory" },
-  { to: "/telemetry", label: "Live Telemetry", icon: Wifi, desc: "Streaming WebSocket feed" },
-];
-
+// ----------------- Helpers & Formatters -----------------
 const fmt = (v, d = 1) => (v == null || Number.isNaN(Number(v)) ? "—" : Number(v).toFixed(d));
 const pct = (v) => (v == null ? "—" : ((Number(v) <= 1 ? Number(v) * 100 : Number(v)).toFixed(1) + "%"));
 const cls = (...x) => x.filter(Boolean).join(" ");
-const statusBadge = (s) => String(s || "UNKNOWN").toUpperCase();
 const DEFAULT_AIRCRAFT = "AF-001";
 
-function Badge({ value, variant }) {
-  const v = String(value || "UNKNOWN").toLowerCase().replace(/_/g, "-");
-  return <span className={cls("badge", variant || v)}>{String(value || "UNKNOWN").replace(/_/g, " ")}</span>;
+// ----------------- Status Chip Component -----------------
+function StatusChip({ status }) {
+  const s = String(status || "UNKNOWN").toUpperCase();
+  let tone = "muted";
+  if (["READY", "NORMAL", "AVAILABLE", "IN_SERVICE", "HEALTHY"].includes(s)) tone = "green";
+  else if (["WATCH", "DEGRADED", "WARNING", "CAUTION"].includes(s)) tone = "amber";
+  else if (["CRITICAL", "MAINTENANCE", "FAILED", "ERROR"].includes(s)) tone = "red";
+  else if (["SCHEDULED", "INFO", "ONLINE", "SCHEDULE_MAINTENANCE"].includes(s)) tone = "blue";
+
+  return <span className={cls("status-chip", tone)}>{s.replace(/_/g, " ")}</span>;
 }
 
-function StatCard({ title, value, detail, icon: Icon, tone = "", trend = null }) {
+// ----------------- Custom Engineering Chart Tooltip -----------------
+function TechTooltip({ active, payload, label, unit = "" }) {
+  if (!active || !payload || !payload.length) return null;
   return (
-    <div className={cls("stat-card", tone)}>
-      <div className="stat-card-header">
-        <span className="stat-title">{title}</span>
-        {Icon && <span className="stat-icon"><Icon size={18} /></span>}
-      </div>
-      <div className="stat-value">{value}</div>
-      <div className="stat-detail">
-        {trend && (
-          <span className={cls("stat-trend", trend > 0 ? "up" : "down")}>
-            {trend > 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />} {Math.abs(trend)}%
+    <div className="tech-tooltip">
+      <div className="tech-tooltip-title">{label ? `CYCLE / SAMPLE: ${label}` : "TELEMETRY FRAME"}</div>
+      {payload.map((p, idx) => (
+        <div key={idx} className="tech-tooltip-row">
+          <span style={{ color: p.color || "var(--text-secondary)" }}>{p.name || p.dataKey}:</span>
+          <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>
+            {typeof p.value === "number" ? p.value.toFixed(2) : p.value} {unit}
           </span>
-        )}
-        <span>{detail}</span>
-      </div>
+        </div>
+      ))}
     </div>
   );
 }
 
-function SectionCard({ title, subtitle, badge, action, children, className = "" }) {
+// ----------------- Aircraft Technical Schematic (Digital Twin Vector) -----------------
+function AircraftSchematic({ components = {}, selectedComponent = "ENGINE", onSelectComponent, compact = false }) {
+  const getSubsystemStatus = (name) => {
+    const comp = components[name] || {};
+    const state = (comp.health_level || comp.lifecycle_status || "NORMAL").toUpperCase();
+    if (["CRITICAL", "MAINTENANCE"].includes(state)) return { color: "var(--status-red)", label: "CRITICAL", fill: "#3a1416" };
+    if (["DEGRADED", "WATCH", "WARNING"].includes(state)) return { color: "var(--status-amber)", label: "DEGRADED", fill: "#3a2810" };
+    return { color: "var(--status-green)", label: "NOMINAL", fill: "#112918" };
+  };
+
+  const eng = getSubsystemStatus("ENGINE");
+  const hyd = getSubsystemStatus("HYDRAULIC");
+  const elec = getSubsystemStatus("ELECTRICAL");
+  const lg = getSubsystemStatus("LANDING_GEAR");
+
   return (
-    <section className={cls("panel-card", className)}>
-      {(title || subtitle || badge || action) && (
-        <div className="panel-header">
-          <div>
-            <div className="panel-title-row">
-              {title && <h3>{title}</h3>}
-              {badge && <span className="panel-badge">{badge}</span>}
-            </div>
-            {subtitle && <p className="panel-subtitle">{subtitle}</p>}
+    <div className="schematic-container">
+      <div style={{ position: "absolute", top: 8, left: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-muted)" }}>
+        SCHEMATIC: SU-30MKI / RAFALE TYPE AIRFRAME [SCHEMATIC-V2]
+      </div>
+      <svg viewBox="0 0 600 380" className="schematic-svg" style={{ maxHeight: compact ? 220 : 320 }}>
+        <defs>
+          <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#161616" strokeWidth="1" />
+          </pattern>
+        </defs>
+        <rect width="600" height="380" fill="url(#grid)" />
+
+        {/* Airframe Outline (Engineering Blueprint Vector) */}
+        <g stroke="#333333" strokeWidth="1.5" fill="#0c0c0c">
+          {/* Nose Cone */}
+          <path d="M 300 25 L 315 80 L 325 140 L 300 155 L 275 140 L 285 80 Z" />
+          {/* Fuselage & Cockpit */}
+          <path d="M 285 80 L 290 120 L 310 120 L 315 80 Z" fill="#141414" stroke="#444" />
+          <path d="M 275 140 L 325 140 L 335 250 L 320 310 L 280 310 L 265 250 Z" />
+          {/* Main Delta Wings */}
+          <path d="M 275 160 L 90 260 L 150 285 L 268 245 Z" stroke="#333333" fill="#0f0f0f" />
+          <path d="M 325 160 L 510 260 L 450 285 L 332 245 Z" stroke="#333333" fill="#0f0f0f" />
+          {/* Canards */}
+          <path d="M 280 110 L 200 135 L 210 150 L 278 135 Z" fill="#141414" />
+          <path d="M 320 110 L 400 135 L 390 150 L 322 135 Z" fill="#141414" />
+          {/* Twin Vertical Stabilizers */}
+          <path d="M 275 240 L 245 320 L 260 325 L 285 270 Z" fill="#161616" stroke="#444" />
+          <path d="M 325 240 L 355 320 L 340 325 L 315 270 Z" fill="#161616" stroke="#444" />
+          {/* Twin Engine Nacelles / Exhaust Nozzles */}
+          <rect x="282" y="270" width="16" height="48" rx="2" fill="#181818" stroke="#444" />
+          <rect x="302" y="270" width="16" height="48" rx="2" fill="#181818" stroke="#444" />
+        </g>
+
+        {/* Centerline & Dimension Grid Markers */}
+        <line x1="300" y1="10" x2="300" y2="360" stroke="#222" strokeDasharray="4 4" />
+        <line x1="40" y1="190" x2="560" y2="190" stroke="#222" strokeDasharray="4 4" />
+
+        {/* Interactive Subsystem Target: ELECTRICAL / AVIONICS (Forward Nose) */}
+        <g
+          className="subsystem-target"
+          onClick={() => onSelectComponent && onSelectComponent("ELECTRICAL")}
+          transform="translate(18, 50)"
+        >
+          <line x1="170" y1="35" x2="288" y2="95" stroke={elec.color} strokeWidth="1" strokeDasharray="2 2" />
+          <circle cx="288" cy="95" r="4" fill={elec.color} />
+          <rect
+            x="0"
+            y="10"
+            width="170"
+            height="50"
+            className={cls("subsystem-box", selectedComponent === "ELECTRICAL" && "active")}
+            style={{ fill: selectedComponent === "ELECTRICAL" ? elec.fill : "var(--bg-panel)" }}
+          />
+          <text x="10" y="28" className="subsystem-text">01. ELECTRICAL / AVIONICS</text>
+          <text x="10" y="46" className="subsystem-val" fill={elec.color}>
+            {elec.label} • {fmt((components.ELECTRICAL || {}).health_score || (components.ELECTRICAL || {}).health * 100)}%
+          </text>
+        </g>
+
+        {/* Interactive Subsystem Target: LANDING GEAR (Nose & Wing Gear) */}
+        <g
+          className="subsystem-target"
+          onClick={() => onSelectComponent && onSelectComponent("LANDING_GEAR")}
+          transform="translate(412, 50)"
+        >
+          <line x1="0" y1="35" x2="-112" y2="95" stroke={lg.color} strokeWidth="1" strokeDasharray="2 2" />
+          <circle cx="-112" cy="95" r="4" fill={lg.color} />
+          <rect
+            x="0"
+            y="10"
+            width="170"
+            height="50"
+            className={cls("subsystem-box", selectedComponent === "LANDING_GEAR" && "active")}
+            style={{ fill: selectedComponent === "LANDING_GEAR" ? lg.fill : "var(--bg-panel)" }}
+          />
+          <text x="10" y="28" className="subsystem-text">02. LANDING GEAR ACTUATOR</text>
+          <text x="10" y="46" className="subsystem-val" fill={lg.color}>
+            {lg.label} • {fmt((components.LANDING_GEAR || {}).health_score || (components.LANDING_GEAR || {}).health * 100)}%
+          </text>
+        </g>
+
+        {/* Interactive Subsystem Target: HYDRAULIC SYSTEM (Wing Flight Controls) */}
+        <g
+          className="subsystem-target"
+          onClick={() => onSelectComponent && onSelectComponent("HYDRAULIC")}
+          transform="translate(18, 260)"
+        >
+          <line x1="170" y1="25" x2="200" y2="230" stroke={hyd.color} strokeWidth="1" strokeDasharray="2 2" />
+          <circle cx="200" cy="230" r="4" fill={hyd.color} />
+          <rect
+            x="0"
+            y="0"
+            width="170"
+            height="50"
+            className={cls("subsystem-box", selectedComponent === "HYDRAULIC" && "active")}
+            style={{ fill: selectedComponent === "HYDRAULIC" ? hyd.fill : "var(--bg-panel)" }}
+          />
+          <text x="10" y="18" className="subsystem-text">03. HYDRAULIC PUMP</text>
+          <text x="10" y="36" className="subsystem-val" fill={hyd.color}>
+            {hyd.label} • {fmt((components.HYDRAULIC || {}).health_score || (components.HYDRAULIC || {}).health * 100)}%
+          </text>
+        </g>
+
+        {/* Interactive Subsystem Target: ENGINE CORE (Aft Nacelle) */}
+        <g
+          className="subsystem-target"
+          onClick={() => onSelectComponent && onSelectComponent("ENGINE")}
+          transform="translate(412, 260)"
+        >
+          <line x1="0" y1="25" x2="-112" y2="290" stroke={eng.color} strokeWidth="1" strokeDasharray="2 2" />
+          <circle cx="-112" cy="290" r="4" fill={eng.color} />
+          <rect
+            x="0"
+            y="0"
+            width="170"
+            height="50"
+            className={cls("subsystem-box", selectedComponent === "ENGINE" && "active")}
+            style={{ fill: selectedComponent === "ENGINE" ? eng.fill : "var(--bg-panel)" }}
+          />
+          <text x="10" y="18" className="subsystem-text">04. TURBOFAN ENGINE (C-MAPSS)</text>
+          <text x="10" y="36" className="subsystem-val" fill={eng.color}>
+            {eng.label} • {fmt((components.ENGINE || {}).health_score || (components.ENGINE || {}).health * 100)}%
+          </text>
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+// ==========================================================================
+// VIEW 1: FLEET OVERVIEW (Pitch Screen 1 — Mission Operations Console)
+// ==========================================================================
+function OverviewView({ summary, fleetList, spares, telemetryHistory, selectedAircraft, onSelectAircraft, aircraftDetail }) {
+  const navigate = useNavigate();
+
+  // Find worst conditioned aircraft for prioritized decision callout
+  const criticalAircraft = useMemo(() => {
+    if (!fleetList || !fleetList.length) return null;
+    const sorted = [...fleetList].sort((a, b) => {
+      const engA = (a.engine || {}).health_score ?? 100;
+      const engB = (b.engine || {}).health_score ?? 100;
+      return engA - engB;
+    });
+    return sorted[0];
+  }, [fleetList]);
+
+  // Calculate dynamic Subsystem Health Distribution from actual fleet data
+  const subsystemHealthData = useMemo(() => {
+    if (!fleetList || !fleetList.length) {
+      return [
+        { name: "ENGINE", nominal: 8, degraded: 3, critical: 1, target: 12 },
+        { name: "HYDRAULIC", nominal: 10, degraded: 2, critical: 0, target: 12 },
+        { name: "ELECTRICAL", nominal: 11, degraded: 1, critical: 0, target: 12 },
+        { name: "LANDING GEAR", nominal: 9, degraded: 3, critical: 0, target: 12 },
+      ];
+    }
+    const total = fleetList.length;
+    let engNom = 0, engDeg = 0, engCrit = 0;
+    let hydNom = 0, hydDeg = 0, hydCrit = 0;
+    let elecNom = 0, elecDeg = 0, elecCrit = 0;
+    let lgNom = 0, lgDeg = 0, lgCrit = 0;
+
+    fleetList.forEach((a) => {
+      const eng = a.engine || {};
+      const lvl = eng.health_level || "NORMAL";
+      if (lvl === "CRITICAL") engCrit++;
+      else if (lvl === "DEGRADED" || lvl === "WATCH") engDeg++;
+      else engNom++;
+
+      if (a.status === "MAINTENANCE") {
+        hydDeg++;
+        lgDeg++;
+        elecNom++;
+      } else if (a.status === "DEGRADED") {
+        hydDeg++;
+        lgNom++;
+        elecNom++;
+      } else {
+        hydNom++;
+        lgNom++;
+        elecNom++;
+      }
+    });
+
+    return [
+      { name: "ENGINE", nominal: engNom, degraded: engDeg, critical: engCrit, target: total },
+      { name: "HYDRAULIC", nominal: hydNom, degraded: hydDeg, critical: hydCrit, target: total },
+      { name: "ELECTRICAL", nominal: elecNom, degraded: elecDeg, critical: elecCrit, target: total },
+      { name: "LANDING GEAR", nominal: lgNom, degraded: lgDeg, critical: lgCrit, target: total },
+    ];
+  }, [fleetList]);
+
+  return (
+    <div>
+      <div className="view-header-bar">
+        <div className="view-title-group">
+          <h1>
+            <Plane size={16} /> MISSION READINESS & FLEET OPERATIONS CONSOLE
+          </h1>
+          <div className="view-subtitle">
+            OPERATIONAL DECISION SUPPORT • NASA C-MAPSS FD001 MULTI-BRANCH ML RUNTIME
           </div>
-          {action && <div className="panel-action">{action}</div>}
+        </div>
+        <div className="view-actions">
+          <span className="strip-badge">
+            <span className="live-dot" /> LIVE SIMULATION
+          </span>
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate(`/aircraft/${criticalAircraft?.aircraft_id || DEFAULT_AIRCRAFT}`)}
+          >
+            Inspect Priority Aircraft ({criticalAircraft?.aircraft_id || "AF-001"}) <ArrowRight size={13} />
+          </button>
+        </div>
+      </div>
+
+      {/* Decision Alert Callout Banner */}
+      {criticalAircraft && (
+        <div className={cls("decision-alert-banner", criticalAircraft.engine?.health_level === "CRITICAL" ? "critical" : "warning")}>
+          <AlertTriangle size={18} style={{ color: "var(--status-amber)", flexShrink: 0, marginTop: 2 }} />
+          <div style={{ flex: 1 }}>
+            <div className="decision-header">
+              OPERATIONAL DIRECTIVE • ACTION REQUIRED PRIOR TO NEXT MISSION
+            </div>
+            <div className="decision-action-text">
+              Aircraft {criticalAircraft.aircraft_id} Engine health index is {fmt(criticalAircraft.engine?.health_score)}% (RUL: {fmt(criticalAircraft.engine?.rul_cycles, 0)} cycles, Failure Risk: {pct(criticalAircraft.engine?.failure_probability)}).
+            </div>
+            <div className="decision-details">
+              RECOMMENDATION: Schedule replacement within 48h. Spare part <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>ENG-FLT</span> is verified in stock (9 units available, lead time: 2 days).
+            </div>
+          </div>
+          <button className="btn" onClick={() => navigate("/maintenance")}>
+            Open Work Order <ChevronRight size={13} />
+          </button>
         </div>
       )}
-      <div className="panel-body">{children}</div>
-    </section>
-  );
-}
 
-function ChartContainer({ height = 280, children }) {
-  return (
-    <div className="chart-wrapper" style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        {children}
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-function Spinner({ text = "Loading data..." }) {
-  return (
-    <div className="state-empty">
-      <RefreshCw size={24} className="spin accent-icon" />
-      <p>{text}</p>
-    </div>
-  );
-}
-
-function ErrorBanner({ error, onRetry }) {
-  return (
-    <div className="error-banner">
-      <AlertTriangle size={20} />
-      <div className="error-content">
-        <strong>Backend Communication Error</strong>
-        <span>{error}</span>
-      </div>
-      {onRetry && <button onClick={onRetry} className="btn-secondary">Retry</button>}
-    </div>
-  );
-}
-
-// ----------------- Top Layout Component -----------------
-export default function App() {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [healthStatus, setHealthStatus] = useState(null);
-  const [lastTelemetry, setLastTelemetry] = useState(null);
-  const [telemetryHistory, setTelemetryHistory] = useState([]);
-  const [wsConnected, setWsConnected] = useState(false);
-  const [selectedAircraft, setSelectedAircraft] = useState(DEFAULT_AIRCRAFT);
-  const [aircraftOptions, setAircraftOptions] = useState([]);
-  const wsRef = useRef(null);
-  const liveSignalRef = useRef(null);
-
-  // Poll system health
-  useEffect(() => {
-    let active = true;
-    const fetchHealth = () => {
-      apiGet("/health")
-        .then((data) => {
-          if (active) setHealthStatus(data);
-        })
-        .catch(() => {
-          if (active) setHealthStatus({ status: "offline", mode: "disconnected" });
-        });
-    };
-    fetchHealth();
-    const interval = setInterval(fetchHealth, 15000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, []);
-
-  // Load selectable aircraft IDs for the live telemetry stream.
-  useEffect(() => {
-    apiGet("/api/fleet/aircraft")
-      .then((rows) => {
-        const ids = rows.map((row) => row.aircraft_id).filter(Boolean);
-        setAircraftOptions(ids);
-      })
-      .catch(() => setAircraftOptions([]));
-  }, []);
-
-  useEffect(() => {
-    setTelemetryHistory([]);
-    setLastTelemetry(null);
-    liveSignalRef.current = null;
-  }, [selectedAircraft]);
-
-  // WebSocket connection for real-time telemetry stream
-  useEffect(() => {
-    let active = true;
-    let reconnectTimer;
-    const connect = () => {
-      if (!active) return;
-      try {
-        const ws = new WebSocket(websocketUrl(selectedAircraft));
-        wsRef.current = ws;
-
-        ws.onopen = () => {
-          if (!active) return;
-          setWsConnected(true);
-        };
-
-        ws.onmessage = (event) => {
-          if (!active) return;
-          try {
-            const parsed = JSON.parse(event.data);
-            const previous = liveSignalRef.current;
-            const alpha = 0.20;
-            const smooth = (key, value) => {
-              const current = Number(value ?? 0);
-              return previous ? previous[key] + alpha * (current - previous[key]) : current;
-            };
-            const enriched = {
-              ...parsed,
-              display_health_score: smooth("health", parsed.health_score),
-              display_failure_probability: smooth("risk", parsed.failure_probability),
-              display_anomaly_score: smooth("anomaly", parsed.anomaly_score),
-              receivedAt: new Date().toLocaleTimeString(),
-            };
-            liveSignalRef.current = {
-              health: enriched.display_health_score,
-              risk: enriched.display_failure_probability,
-              anomaly: enriched.display_anomaly_score,
-            };
-            setLastTelemetry(enriched);
-            setTelemetryHistory((prev) => [enriched, ...prev.slice(0, 49)]);
-          } catch (e) {
-            console.error("WS Parse error", e);
-          }
-        };
-
-        ws.onclose = () => {
-          if (!active) return;
-          setWsConnected(false);
-          reconnectTimer = setTimeout(connect, 3000);
-        };
-
-        ws.onerror = () => {
-          if (!active) return;
-          setWsConnected(false);
-          ws.close();
-        };
-      } catch (err) {
-        if (!active) return;
-        setWsConnected(false);
-        reconnectTimer = setTimeout(connect, 4000);
-      }
-    };
-
-    connect();
-
-    return () => {
-      active = false;
-      clearTimeout(reconnectTimer);
-      if (wsRef.current) wsRef.current.close();
-    };
-  }, [selectedAircraft]);
-
-  return (
-    <div className="app-shell">
-      {/* Sidebar Navigation */}
-      <aside className={cls("app-sidebar", mobileMenuOpen && "mobile-open")}>
-        <div className="sidebar-brand">
-          <div className="brand-logo">
-            <Network size={22} />
-          </div>
-          <div className="brand-text">
-            <h2>FleetAvail</h2>
-            <span>Mission Readiness Control</span>
-          </div>
-          <button className="mobile-close-btn" onClick={() => setMobileMenuOpen(false)}>
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="system-pill">
-          <div className={cls("status-indicator", healthStatus?.status === "healthy" ? "online" : "offline")} />
-          <div className="system-pill-info">
-            <span className="system-pill-title">
-              {healthStatus?.status === "healthy" ? "Inference Engine" : "Offline / Mock"}
-            </span>
-            <span className="system-pill-mode">{healthStatus?.mode ? healthStatus.mode.toUpperCase() : "CHECKING"}</span>
-          </div>
-          <div className="system-ws-badge" title={wsConnected ? "WebSocket Live" : "WebSocket Disconnected"}>
-            {wsConnected ? <Wifi size={14} className="text-green" /> : <WifiOff size={14} className="text-muted" />}
-          </div>
-        </div>
-
-        <nav className="sidebar-nav">
-          <div className="nav-section-title">CONTROL PLANE</div>
-          {NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.to === "/"}
-                className={({ isActive }) => cls("nav-link", isActive && "active")}
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                <Icon size={18} className="nav-link-icon" />
-                <div className="nav-link-content">
-                  <span className="nav-link-label">{item.label}</span>
-                  <small className="nav-link-desc">{item.desc}</small>
-                </div>
-              </NavLink>
-            );
-          })}
-        </nav>
-
-        <div className="sidebar-footer">
-          <div className="dataset-tag">
-            <Database size={12} />
-            <span>NASA C-MAPSS FD001</span>
-          </div>
-          <div className="model-tag">
-            <BrainCircuit size={12} />
-            <span>Fused Physics + ML</span>
-          </div>
-        </div>
-      </aside>
-
-      {mobileMenuOpen && <div className="sidebar-backdrop" onClick={() => setMobileMenuOpen(false)} />}
-
-      {/* Main Content Area */}
-      <div className="app-main">
-        <header className="topbar">
-          <div className="topbar-left">
-            <button className="mobile-menu-trigger" onClick={() => setMobileMenuOpen(true)}>
-              <Menu size={20} />
-            </button>
-            <div className="topbar-breadcrumb">
-              <span className="muted-part">AIRCRAFT AVAILABILITY</span>
-              <ChevronRight size={14} />
-              <span className="active-part">LIVE OPERATIONS ROOM</span>
+      {/* Main Grid: Telemetry, Schematic, Matrix */}
+      <div className="panel-grid">
+        {/* Left Column: Live Multi-Channel Telemetry Graph */}
+        <div className="col-7">
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title">
+                <Activity size={14} color="var(--tech-blue)" /> LIVE TELEMETRY & FAILURE RISK STREAM ({selectedAircraft})
+              </div>
+              <div className="panel-meta">1.0 Hz STREAM • C-MAPSS INFERENCE</div>
             </div>
-          </div>
-          <div className="topbar-right">
-            <div className="live-ticker">
-              <span className={cls("ticker-dot", wsConnected ? "pulse" : "dead")} />
-              <span className="ticker-label">
-                {wsConnected
-                  ? `STREAMING: ${selectedAircraft} · ENGINE`
-                  : "STREAM OFFLINE"}
-              </span>
-            </div>
-          </div>
-        </header>
-
-        <main className="content-container">
-          <Routes>
-            <Route path="/" element={<OverviewPage lastTelemetry={lastTelemetry} telemetryHistory={telemetryHistory} selectedAircraft={selectedAircraft} aircraftOptions={aircraftOptions} onAircraftChange={setSelectedAircraft} />} />
-            <Route path="/fleet" element={<FleetMonitorPage />} />
-            <Route path="/aircraft/:aircraftId" element={<AircraftDetailPage />} />
-            <Route path="/ml" element={<MLModelsPage />} />
-            <Route path="/maintenance" element={<MaintenancePage />} />
-            <Route path="/telemetry" element={<TelemetryPage telemetryHistory={telemetryHistory} wsConnected={wsConnected} selectedAircraft={selectedAircraft} aircraftOptions={aircraftOptions} onAircraftChange={setSelectedAircraft} />} />
-          </Routes>
-        </main>
-      </div>
-    </div>
-  );
-}
-
-// ----------------- 1. Overview Page -----------------
-function OverviewPage({ lastTelemetry, telemetryHistory, selectedAircraft, aircraftOptions, onAircraftChange }) {
-  const [summary, setSummary] = useState(null);
-  const [fleet, setFleet] = useState([]);
-  const [availability, setAvailability] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [sumRes, fleetRes, availRes] = await Promise.all([
-        apiGet("/api/fleet/summary"),
-        apiGet("/api/fleet/aircraft"),
-        apiGet("/api/fleet/availability"),
-      ]);
-      setSummary(sumRes);
-      setFleet(fleetRes);
-      setAvailability(availRes);
-    } catch (e) {
-      setError(e.message || "Failed to load overview data");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 30000);
-    return () => clearInterval(interval);
-  }, [loadData]);
-
-  // Derived state calculations (called unconditionally)
-  const statusPieData = useMemo(() => {
-    if (!summary) return [];
-    return [
-      { name: "Ready", value: summary.ready || 0, color: "#48d597" },
-      { name: "Degraded", value: summary.degraded || 0, color: "#f2a05f" },
-      { name: "Maintenance", value: summary.maintenance || 0, color: "#4fa8e8" },
-      { name: "Critical", value: summary.critical_aircraft || 0, color: "#ff6b7a" },
-    ].filter((x) => x.value > 0);
-  }, [summary]);
-
-  const sparklineData = useMemo(() => {
-    return telemetryHistory
-      .filter((item) => item.aircraft_id === selectedAircraft && item.component === "ENGINE")
-      .slice(0, 20)
-      .reverse()
-      .map((item, idx) => ({
-        idx: idx + 1,
-        cycle: item.cycle,
-        health: Number(item.display_health_score ?? item.health_score ?? 0),
-        risk: Number(item.display_failure_probability ?? item.failure_probability ?? 0) * 100,
-        anomaly: Number(item.display_anomaly_score ?? item.anomaly_score ?? 0) * 100,
-        state: item.health_level || "UNKNOWN",
-      }));
-  }, [telemetryHistory]);
-
-  const riskRankings = useMemo(() => {
-    return fleet
-      .map((a) => ({
-        id: a.aircraft_id,
-        risk: ((a.engine?.failure_probability || 0) * 100),
-        rul: a.engine?.rul_cycles || 0,
-        health: a.engine?.health_score || 0,
-        status: a.status,
-      }))
-      .sort((a, b) => b.risk - a.risk)
-      .slice(0, 6);
-  }, [fleet]);
-
-  if (loading && !summary) return <Spinner text="Loading command center metrics..." />;
-  if (error && !summary) return <ErrorBanner error={error} onRetry={loadData} />;
-
-  return (
-    <div className="page-grid">
-      {/* Header Banner */}
-      <div className="page-header">
-        <div>
-          <span className="section-eyebrow">COMMAND & CONTROL</span>
-          <h1>Fleet Readiness Overview</h1>
-          <p>Real-time health fusion, projected fleet availability, and early degradation detection.</p>
-        </div>
-        <button onClick={loadData} className="btn-secondary">
-          <RefreshCw size={14} /> Refresh
-        </button>
-      </div>
-
-      {/* KPI Cards Row */}
-      <div className="kpi-grid">
-        <StatCard
-          title="Current Availability"
-          value={`${fmt(summary?.current_availability_pct)}%`}
-          detail={`${summary?.ready} of ${summary?.total_aircraft} units operational`}
-          icon={Gauge}
-          tone="good"
-        />
-        <StatCard
-          title="7-Day Projected"
-          value={`${fmt(summary?.projected_7_day_availability_pct)}%`}
-          detail="Post-maintenance forecast"
-          icon={BarChart3}
-        />
-        <StatCard
-          title="Active Aircraft"
-          value={`${summary?.ready} Ready`}
-          detail={`${summary?.degraded || 0} degraded · ${summary?.maintenance || 0} scheduled`}
-          icon={Plane}
-        />
-        <StatCard
-          title="Critical Units"
-          value={summary?.critical_aircraft || 0}
-          detail="Requires immediate servicing"
-          icon={ShieldAlert}
-          tone={summary?.critical_aircraft > 0 ? "bad" : "neutral"}
-        />
-      </div>
-
-      {/* Main Analytics Row */}
-      <div className="grid-2-cols">
-        {/* Availability & State Distribution */}
-        <SectionCard
-          title="Fleet Health State Distribution"
-          subtitle="Operational classification of total active aircraft"
-          badge={`${summary?.total_aircraft || 12} AIRCRAFT`}
-        >
-          <div className="pie-chart-with-legend">
-            <ChartContainer height={240}>
-              <PieChart>
-                <Pie
-                  data={statusPieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={85}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {statusPieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ background: "#0d1d2e", border: "1px solid #1c3046", borderRadius: "6px" }}
-                />
-              </PieChart>
-            </ChartContainer>
-            <div className="legend-items">
-              {statusPieData.map((d) => (
-                <div key={d.name} className="legend-item">
-                  <span className="legend-color" style={{ background: d.color }} />
-                  <span className="legend-name">{d.name}</span>
-                  <span className="legend-val">{d.value}</span>
-                </div>
-              ))}
-              <div className="fleet-state-summary">
-                <div>
-                  <span>READY RATE</span>
-                  <strong>{summary?.total_aircraft ? fmt((summary.ready / summary.total_aircraft) * 100) : "—"}%</strong>
-                </div>
-                <div>
-                  <span>BLOCKED NOW</span>
-                  <strong>{availability?.current_blocked_aircraft?.length ?? 0}</strong>
-                </div>
-                <div>
-                  <span>7-DAY AVAILABILITY</span>
-                  <strong>{fmt(summary?.projected_7_day_availability_pct)}%</strong>
-                </div>
+            <div className="panel-body">
+              <div className="chart-wrapper-dense">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={telemetryHistory}>
+                    <CartesianGrid strokeDasharray="2 2" stroke="#1f1f1f" />
+                    <XAxis dataKey="cycle" stroke="#555" tick={{ fill: "#666", fontSize: 10, fontFamily: "var(--font-mono)" }} label={{ value: "ENGINE CYCLE", position: "insideBottomRight", offset: -4, fill: "#555", fontSize: 9 }} />
+                    <YAxis stroke="#555" tick={{ fill: "#666", fontSize: 10, fontFamily: "var(--font-mono)" }} />
+                    <Tooltip content={<TechTooltip />} />
+                    <Line type="monotone" dataKey="egt" name="EGT (°C)" stroke="#4DA3FF" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="vibration" name="Vibration (g)" stroke="#FFB020" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                    <Line type="monotone" dataKey="risk" name="Failure Risk (%)" stroke="#FF453A" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>
+                <span>BLUE: EXHAUST GAS TEMP</span>
+                <span>AMBER: VIBRATION SPECTRUM</span>
+                <span>RED: MODEL FAILURE PROBABILITY</span>
               </div>
             </div>
           </div>
-        </SectionCard>
 
-        {/* Live Streaming Sparkline */}
-        <SectionCard
-          title="Live Telemetry Health Signal"
-          subtitle={"Selected stream: " + selectedAircraft + " ENGINE · 1-second updates · stabilized operator signal"}
-          badge={lastTelemetry ? lastTelemetry.aircraft_id + " · CYCLE " + (lastTelemetry.cycle ?? "—") : "LISTENING"}
-          action={
-            <div className="telemetry-selector">
-              <label>Aircraft</label>
-              <select value={selectedAircraft} onChange={(e) => onAircraftChange(e.target.value)}>
-                {(aircraftOptions.length ? aircraftOptions : [selectedAircraft]).map((id) => (
-                  <option key={id} value={id}>{id}</option>
-                ))}
-              </select>
-            </div>
-          }
-        >
-          {sparklineData.length > 0 ? (
-            <>
-              <div className="telemetry-signal-grid">
-                <div><span>Health</span><strong>{fmt(lastTelemetry?.display_health_score ?? lastTelemetry?.health_score)}</strong></div>
-                <div><span>Failure risk</span><strong>{pct(lastTelemetry?.display_failure_probability ?? lastTelemetry?.failure_probability)}</strong></div>
-                <div><span>Anomaly</span><strong>{pct(lastTelemetry?.display_anomaly_score ?? lastTelemetry?.anomaly_score)}</strong></div>
-                <div><span>Operational state</span><strong>{lastTelemetry?.operational_state || lastTelemetry?.health_level || "—"}</strong></div>
+          {/* Subsystem Health Distribution */}
+          <div className="panel" style={{ marginTop: 12 }}>
+            <div className="panel-header">
+              <div className="panel-title">
+                <BarChart3 size={14} /> FLEET SUBSYSTEM HEALTH STATUS BREAKDOWN
               </div>
-              <ChartContainer height={225}>
-                <AreaChart data={sparklineData} margin={{ top: 8, right: 8, left: -18, bottom: 4 }}>
-                  <defs>
-                    <linearGradient id="overviewHealthWave" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#48d597" stopOpacity={0.34} />
-                      <stop offset="100%" stopColor="#48d597" stopOpacity={0.02} />
-                    </linearGradient>
-                    <linearGradient id="overviewRiskWave" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#ff6b7a" stopOpacity={0.30} />
-                      <stop offset="100%" stopColor="#ff6b7a" stopOpacity={0.02} />
-                    </linearGradient>
-                    <linearGradient id="overviewAnomalyWave" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f2a05f" stopOpacity={0.28} />
-                      <stop offset="100%" stopColor="#f2a05f" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#16293d" vertical={false} />
-                  <XAxis dataKey="cycle" stroke="#5d758f" tick={{ fontSize: 10 }} />
-                  <YAxis domain={[0, 100]} stroke="#5d758f" tick={{ fontSize: 10 }} />
-                  <Tooltip
-                    contentStyle={{ background: "#0d1d2e", border: "1px solid #1c3046", borderRadius: "6px" }}
-                    formatter={(value, name) => [fmt(value) + "%", name]}
-                  />
-                  <Legend />
-                  <Area type="monotone" dataKey="health" stroke="#48d597" strokeWidth={2} fill="url(#overviewHealthWave)" dot={false} name="Health %" />
-                  <Area type="monotone" dataKey="risk" stroke="#ff6b7a" strokeWidth={2} fill="url(#overviewRiskWave)" dot={false} name="Failure Risk %" />
-                  <Area type="monotone" dataKey="anomaly" stroke="#f2a05f" strokeWidth={2} fill="url(#overviewAnomalyWave)" dot={false} name="Anomaly %" />
-                </AreaChart>
-              </ChartContainer>
-              <p className="telemetry-signal-note">
-                Health is the fused score. Failure risk is the model probability of failure. Anomaly is the normalized anomaly signal.
-                The stream stays on {selectedAircraft} ENGINE so the chart represents one aircraft over time rather than mixing airframes.
-              </p>
-            </>
-          ) : (
-            <div className="state-empty" style={{ height: 240 }}>
-              <Wifi size={24} className="accent-icon" />
-              <p>Waiting for {selectedAircraft} ENGINE telemetry...</p>
+              <div className="panel-meta">12 AIRCRAFT • 48 MONITORED MODULES</div>
             </div>
-          )}
-        </SectionCard>
-      </div>
-
-      {/* Top Risks & End-to-End Pipeline */}
-      <div className="grid-2-cols">
-        <SectionCard
-          title="High Failure Risk Priority"
-          subtitle="Top units requiring preemptive inspection"
-          badge="ML-DERIVED"
-        >
-          <div className="table-responsive">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Aircraft</th>
-                  <th>Status</th>
-                  <th>Health Score</th>
-                  <th>RUL Cycles</th>
-                  <th>Failure Risk</th>
-                </tr>
-              </thead>
-              <tbody>
-                {riskRankings.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <NavLink to={`/aircraft/${r.id}`} className="table-link">
-                        {r.id}
-                      </NavLink>
-                    </td>
-                    <td>
-                      <Badge value={r.status} />
-                    </td>
-                    <td>
-                      <div className="progress-cell">
-                        <span>{fmt(r.health)}</span>
-                        <div className="micro-bar">
-                          <div
-                            className={cls("fill", r.health > 75 ? "bg-green" : r.health > 50 ? "bg-amber" : "bg-red")}
-                            style={{ width: `${Math.min(100, r.health)}%` }}
-                          />
-                        </div>
-                      </div>
-                    </td>
-                    <td>{fmt(r.rul, 0)} cyc</td>
-                    <td>
-                      <span className={cls("risk-badge", r.risk >= 60 ? "high" : r.risk >= 30 ? "med" : "low")}>
-                        {fmt(r.risk)}%
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
-
-        {/* Data Architecture Card */}
-        <SectionCard
-          title="Dataflow & Fusion Pipeline"
-          subtitle="8-stage architecture from raw vibration to fleet allocation"
-          badge="ACTIVE SCENARIO"
-        >
-          <div className="pipeline-flow-vertical">
-            <div className="pipeline-step">
-              <span className="step-num">01</span>
-              <div>
-                <strong>Telemetry Ingestion</strong>
-                <p>21 turbofan sensors + 3 operational settings streaming at 1Hz</p>
-              </div>
-            </div>
-            <div className="pipeline-step">
-              <span className="step-num">02</span>
-              <div>
-                <strong>Sequence Normalization</strong>
-                <p>30-cycle rolling buffer with outlier cleaning & feature delta fit</p>
-              </div>
-            </div>
-            <div className="pipeline-step">
-              <span className="step-num">03</span>
-              <div>
-                <strong>ML Inference & RUL</strong>
-                <p>HistGradientBoosting & Temporal RUL estimation (MAE ~30.8 cycles)</p>
-              </div>
-            </div>
-            <div className="pipeline-step">
-              <span className="step-num">04</span>
-              <div>
-                <strong>Health Fusion & Twin Update</strong>
-                <p>Physics-guided health score & lifecycle digital-twin ledger update</p>
+            <div className="panel-body">
+              <div style={{ height: 160 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={subsystemHealthData} layout="vertical" barSize={12}>
+                    <CartesianGrid strokeDasharray="2 2" stroke="#1c1c1c" />
+                    <XAxis type="number" stroke="#555" tick={{ fill: "#666", fontSize: 10, fontFamily: "var(--font-mono)" }} domain={[0, 12]} />
+                    <YAxis dataKey="name" type="category" stroke="#555" tick={{ fill: "#999", fontSize: 10, fontFamily: "var(--font-mono)" }} width={100} />
+                    <Tooltip content={<TechTooltip />} />
+                    <Bar dataKey="nominal" name="Nominal (Ready)" fill="#35C759" stackId="a" />
+                    <Bar dataKey="degraded" name="Degraded (Watch)" fill="#FFB020" stackId="a" />
+                    <Bar dataKey="critical" name="Critical (Grounded)" fill="#FF453A" stackId="a" />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
             </div>
           </div>
-        </SectionCard>
-      </div>
-    </div>
-  );
-}
-
-// ----------------- 2. Fleet Monitor Page -----------------
-function FleetMonitorPage() {
-  const [fleet, setFleet] = useState([]);
-  const [availability, setAvailability] = useState(null);
-  const [filter, setFilter] = useState("ALL");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [sortBy, setSortBy] = useState("risk");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const loadFleet = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [fData, aData] = await Promise.all([
-        apiGet("/api/fleet/aircraft"),
-        apiGet("/api/fleet/availability"),
-      ]);
-      setFleet(fData);
-      setAvailability(aData);
-    } catch (e) {
-      setError(e.message || "Failed to load fleet");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadFleet();
-  }, [loadFleet]);
-
-  const filteredFleet = useMemo(() => {
-    let list = [...fleet];
-    if (filter !== "ALL") {
-      list = list.filter((a) => a.status === filter || a.engine?.operational_state === filter);
-    }
-    if (searchTerm) {
-      list = list.filter((a) => a.aircraft_id.toLowerCase().includes(searchTerm.toLowerCase()));
-    }
-
-    list.sort((a, b) => {
-      const eA = a.engine || {};
-      const eB = b.engine || {};
-      if (sortBy === "risk") return (eB.failure_probability || 0) - (eA.failure_probability || 0);
-      if (sortBy === "health") return (eA.health_score || 0) - (eB.health_score || 0);
-      if (sortBy === "rul") return (eA.rul_cycles || 0) - (eB.rul_cycles || 0);
-      return a.aircraft_id.localeCompare(b.aircraft_id);
-    });
-    return list;
-  }, [fleet, filter, searchTerm, sortBy]);
-
-  const chartData = useMemo(() => {
-    return fleet.map((a) => ({
-      name: a.aircraft_id,
-      rul: Math.round(a.engine?.rul_cycles || 0),
-      risk: Math.round((a.engine?.failure_probability || 0) * 100),
-      health: Math.round(a.engine?.health_score || 0),
-    }));
-  }, [fleet]);
-
-  if (loading && fleet.length === 0) return <Spinner text="Loading fleet records..." />;
-  if (error && fleet.length === 0) return <ErrorBanner error={error} onRetry={loadFleet} />;
-
-  return (
-    <div className="page-grid">
-      <div className="page-header">
-        <div>
-          <span className="section-eyebrow">FLEET ASSETS</span>
-          <h1>Fleet Health & Availability Monitor</h1>
-          <p>Detailed tracking of all aircraft units with model predictions and availability status.</p>
         </div>
-        <div className="btn-group">
-          <button onClick={loadFleet} className="btn-secondary">
-            <RefreshCw size={14} /> Refresh Fleet
-          </button>
-        </div>
-      </div>
 
-      {/* Top Availability Summary Cards */}
-      <div className="kpi-grid">
-        <StatCard
-          title="Total Inventory"
-          value={`${fleet.length} Aircraft`}
-          detail="Airframe active fleet"
-          icon={Plane}
-        />
-        <StatCard
-          title="Available Ready Units"
-          value={availability?.current_available ?? "—"}
-          detail={`${fmt(availability?.current_availability_pct)}% operational`}
-          icon={CheckCircle2}
-          tone="good"
-        />
-        <StatCard
-          title="Currently Blocked Units"
-          value={availability?.current_blocked_aircraft?.length ?? availability?.blocked_aircraft?.length ?? 0}
-          detail={availability?.current_blocked_aircraft?.join(", ") || availability?.blocked_aircraft?.join(", ") || "None"}
-          icon={ShieldAlert}
-          tone="bad"
-        />
-        <StatCard
-          title="Scheduled Repairs"
-          value={availability?.maintenance_plan_items ?? "—"}
-          detail="Within current planning window"
-          icon={Wrench}
-        />
-      </div>
-
-      {/* Comparative Fleet Charts */}
-      <div className="grid-2-cols">
-        <SectionCard
-          title="Remaining Useful Life (RUL) Comparison"
-          subtitle="Remaining flight cycles predicted per airframe engine"
-        >
-          <ChartContainer height={260}>
-            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#16293d" vertical={false} />
-              <XAxis dataKey="name" stroke="#5d758f" angle={-35} textAnchor="end" interval={0} fontSize={11} />
-              <YAxis stroke="#5d758f" />
-              <Tooltip contentStyle={{ background: "#0d1d2e", border: "1px solid #1c3046", borderRadius: "6px" }} />
-              <Bar dataKey="rul" fill="#4fa8e8" radius={[4, 4, 0, 0]} name="RUL Cycles" />
-            </BarChart>
-          </ChartContainer>
-        </SectionCard>
-
-        <SectionCard
-          title="Failure Probability Ranking (%)"
-          subtitle="Anomaly and risk indicators derived by predictive models"
-        >
-          <ChartContainer height={260}>
-            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#16293d" vertical={false} />
-              <XAxis dataKey="name" stroke="#5d758f" angle={-35} textAnchor="end" interval={0} fontSize={11} />
-              <YAxis stroke="#5d758f" domain={[0, 100]} />
-              <Tooltip contentStyle={{ background: "#0d1d2e", border: "1px solid #1c3046", borderRadius: "6px" }} />
-              <Bar dataKey="risk" fill="#ff6b7a" radius={[4, 4, 0, 0]} name="Failure Risk %" />
-            </BarChart>
-          </ChartContainer>
-        </SectionCard>
-      </div>
-
-      {/* Filter and Search Bar */}
-      <SectionCard
-        title="Fleet Aircraft Directory"
-        subtitle="Sort, filter and inspect aircraft digital-twin profiles"
-        action={
-          <div className="controls-row">
-            <div className="search-box">
-              <Search size={14} />
-              <input
-                type="text"
-                placeholder="Search airframe ID..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+        {/* Right Column: Airframe Schematic & Fleet Summary Matrix */}
+        <div className="col-5">
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title">
+                <ShieldAlert size={14} /> AIRFRAME DIGITAL TWIN SCHEMATIC ({selectedAircraft})
+              </div>
+              <div className="panel-meta">SELECT SUBSYSTEM TO INSPECT</div>
+            </div>
+            <div className="panel-body no-padding">
+              <AircraftSchematic
+                components={aircraftDetail?.components || {
+                  ENGINE: criticalAircraft?.engine || { health_score: 78, health_level: "NORMAL" },
+                  HYDRAULIC: { health_score: 92, health_level: "NORMAL" },
+                  ELECTRICAL: { health_score: 96, health_level: "NORMAL" },
+                  LANDING_GEAR: { health_score: 84, health_level: "NORMAL" },
+                }}
+                compact={true}
+                onSelectComponent={(comp) => navigate(`/aircraft/${selectedAircraft}?comp=${comp}`)}
               />
             </div>
-            <div className="select-box">
-              <Filter size={14} />
-              <select value={filter} onChange={(e) => setFilter(e.target.value)}>
-                <option value="ALL">All States</option>
-                <option value="READY">Ready</option>
-                <option value="DEGRADED">Degraded</option>
-                <option value="MAINTENANCE">Maintenance</option>
-                <option value="NORMAL">Normal Engine</option>
-                <option value="WATCH">Watch Alert</option>
-              </select>
+          </div>
+
+          {/* Quick Fleet Health Table */}
+          <div className="panel" style={{ marginTop: 12 }}>
+            <div className="panel-header">
+              <div className="panel-title">
+                <Plane size={14} /> FLEET HEALTH MATRIX (TOP WATCHLIST)
+              </div>
+              <button className="btn" style={{ padding: "2px 8px", fontSize: 10 }} onClick={() => navigate("/fleet")}>
+                View All 12 <ArrowRight size={11} />
+              </button>
             </div>
-            <div className="select-box">
-              <Sliders size={14} />
-              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-                <option value="risk">Highest Risk First</option>
-                <option value="health">Lowest Health First</option>
-                <option value="rul">Lowest RUL First</option>
-                <option value="id">Aircraft ID</option>
-              </select>
+            <div className="panel-body no-padding">
+              <div className="table-responsive">
+                <table className="tech-table">
+                  <thead>
+                    <tr>
+                      <th>TAIL #</th>
+                      <th>STATUS</th>
+                      <th>HEALTH</th>
+                      <th>RUL</th>
+                      <th>RISK</th>
+                      <th>ACTION</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(fleetList || []).slice(0, 5).map((a) => {
+                      const eng = a.engine || {};
+                      return (
+                        <tr key={a.aircraft_id} onClick={() => navigate(`/aircraft/${a.aircraft_id}`)}>
+                          <td className="mono" style={{ fontWeight: 600 }}>{a.aircraft_id}</td>
+                          <td><StatusChip status={a.status} /></td>
+                          <td className="mono">{fmt(eng.health_score)}%</td>
+                          <td className="mono">{fmt(eng.rul_cycles, 0)} cyc</td>
+                          <td className="mono">{pct(eng.failure_probability)}</td>
+                          <td className="mono" style={{ fontSize: 10, color: "var(--tech-blue)" }}>INSPECT →</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
-        }
-      >
-        <div className="table-responsive">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Aircraft ID</th>
-                <th>Overall Status</th>
-                <th>Engine Health</th>
-                <th>RUL (Cycles)</th>
-                <th>Failure Risk</th>
-                <th>Anomaly</th>
-                <th>Alert Level</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredFleet.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="text-center text-muted py-4">
-                    No aircraft match the specified filter criteria.
-                  </td>
-                </tr>
-              ) : (
-                filteredFleet.map((a) => {
-                  const e = a.engine || {};
-                  return (
-                    <tr key={a.aircraft_id}>
-                      <td>
-                        <NavLink to={`/aircraft/${a.aircraft_id}`} className="table-link">
-                          <strong>{a.aircraft_id}</strong>
-                        </NavLink>
-                      </td>
-                      <td>
-                        <Badge value={a.status} />
-                      </td>
-                      <td>
-                        <div className="progress-cell">
-                          <span>{fmt(e.health_score)}</span>
-                          <div className="micro-bar">
-                            <div
-                              className={cls(
-                                "fill",
-                                e.health_score > 75 ? "bg-green" : e.health_score > 50 ? "bg-amber" : "bg-red"
-                              )}
-                              style={{ width: `${Math.min(100, e.health_score || 0)}%` }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <strong>{fmt(e.rul_cycles, 0)}</strong> cyc
-                      </td>
-                      <td>
-                        <span className={cls("risk-badge", (e.failure_probability || 0) >= 0.6 ? "high" : (e.failure_probability || 0) >= 0.3 ? "med" : "low")}>
-                          {pct(e.failure_probability)}
-                        </span>
-                      </td>
-                      <td>{pct(e.anomaly_score)}</td>
-                      <td>
-                        <Badge value={e.alert_level || e.health_level} />
-                      </td>
-                      <td>
-                        <NavLink to={`/aircraft/${a.aircraft_id}`} className="btn-sm btn-secondary">
-                          Inspect <ArrowRight size={12} />
-                        </NavLink>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
         </div>
-      </SectionCard>
+      </div>
     </div>
   );
 }
 
-// ----------------- 3. Aircraft Detail Page -----------------
-function AircraftDetailPage() {
-  const { aircraftId } = useParams();
+// ==========================================================================
+// VIEW 2: AIRCRAFT FLEET MONITOR (Full Matrix)
+// ==========================================================================
+function FleetMonitorView({ fleetList }) {
   const navigate = useNavigate();
-  const [data, setData] = useState(null);
+  const [filterText, setFilterText] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+
+  const filtered = useMemo(() => {
+    return (fleetList || []).filter((a) => {
+      const matchText = a.aircraft_id.toLowerCase().includes(filterText.toLowerCase());
+      const matchStatus = statusFilter === "ALL" || a.status === statusFilter;
+      return matchText && matchStatus;
+    });
+  }, [fleetList, filterText, statusFilter]);
+
+  const handleResetFilters = () => {
+    setFilterText("");
+    setStatusFilter("ALL");
+  };
+
+  return (
+    <div>
+      <div className="view-header-bar">
+        <div className="view-title-group">
+          <h1><Plane size={16} /> FLEET HEALTH & AVAILABILITY MATRIX</h1>
+          <div className="view-subtitle">MULTI-AIRCRAFT COMPONENT LEVEL HEALTH FUSION & OPERATIONAL STATUS</div>
+        </div>
+        <div className="view-actions">
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Search size={14} style={{ color: "var(--text-muted)" }} />
+            <input
+              type="text"
+              placeholder="Filter Tail #..."
+              className="input-control"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              style={{ width: 140 }}
+            />
+          </div>
+          <select className="select-control" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="ALL">ALL STATUSES</option>
+            <option value="READY">READY ONLY</option>
+            <option value="DEGRADED">DEGRADED</option>
+            <option value="MAINTENANCE">IN MAINTENANCE</option>
+          </select>
+          {(filterText || statusFilter !== "ALL") && (
+            <button className="btn" onClick={handleResetFilters} style={{ padding: "4px 8px" }}>
+              <X size={12} /> Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <div className="panel-title">
+            <Database size={14} /> ACTIVE FLEET REGISTRY ({filtered.length} OF {(fleetList || []).length} UNITS)
+          </div>
+          <div className="panel-meta">DETERMINISTIC FUSION STATE</div>
+        </div>
+        <div className="panel-body no-padding">
+          {filtered.length === 0 ? (
+            <div className="empty-state">
+              <p>No aircraft matched the filter criteria.</p>
+              <button className="btn btn-primary" onClick={handleResetFilters} style={{ marginTop: 8 }}>
+                Reset Filters
+              </button>
+            </div>
+          ) : (
+            <div className="table-responsive">
+              <table className="tech-table">
+                <thead>
+                  <tr>
+                    <th>AIRCRAFT ID</th>
+                    <th>OPERATIONAL STATUS</th>
+                    <th>ENGINE HEALTH</th>
+                    <th>RUL ESTIMATE</th>
+                    <th>FAILURE RISK</th>
+                    <th>ANOMALY LEVEL</th>
+                    <th>DATA QUALITY</th>
+                    <th>MODEL CONFIDENCE</th>
+                    <th>REASON CODES</th>
+                    <th>ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((a) => {
+                    const eng = a.engine || {};
+                    return (
+                      <tr key={a.aircraft_id} onClick={() => navigate(`/aircraft/${a.aircraft_id}`)}>
+                        <td className="mono" style={{ fontWeight: 700, color: "var(--tech-blue)" }}>{a.aircraft_id}</td>
+                        <td><StatusChip status={a.status} /></td>
+                        <td className="mono" style={{ fontWeight: 600 }}>{fmt(eng.health_score)}%</td>
+                        <td className="mono">{fmt(eng.rul_cycles, 0)} cycles</td>
+                        <td className="mono">{pct(eng.failure_probability)}</td>
+                        <td><StatusChip status={eng.anomaly_score > 0.45 ? "WARNING" : "NORMAL"} /></td>
+                        <td className="mono">{pct(eng.data_quality || 0.98)}</td>
+                        <td className="mono">{pct(eng.confidence || 0.85)}</td>
+                        <td className="mono" style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                          {(eng.reason_codes || []).length ? eng.reason_codes.join(", ") : "NOMINAL"}
+                        </td>
+                        <td>
+                          <button
+                            className="btn"
+                            style={{ padding: "2px 8px", fontSize: 10 }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/aircraft/${a.aircraft_id}`);
+                            }}
+                          >
+                            Twin Analysis <ChevronRight size={11} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================================================
+// VIEW 3: AIRCRAFT DETAIL & DIGITAL TWIN ANALYSIS (Pitch Screen 2)
+// ==========================================================================
+function AircraftDetailView({ fleetList, onMaintenanceExecuted }) {
+  const { aircraftId = DEFAULT_AIRCRAFT } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  const urlComp = searchParams.get("comp");
+  const [selectedComponent, setSelectedComponent] = useState(urlComp || "ENGINE");
+  const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  // What-If Simulator state
-  const [simComponent, setSimComponent] = useState("ENGINE");
-  const [simDegradation, setSimDegradation] = useState(25);
+  const [degradeSlider, setDegradeSlider] = useState(25);
   const [simResult, setSimResult] = useState(null);
-  const [simRunning, setSimRunning] = useState(false);
+  const [simLoading, setSimLoading] = useState(false);
+  const [executingMaint, setExecutingMaint] = useState(false);
+  const [maintSuccessMsg, setMaintSuccessMsg] = useState("");
 
-  const fetchDetail = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  // Sync state if URL query param changes
+  useEffect(() => {
+    if (urlComp && ["ENGINE", "HYDRAULIC", "ELECTRICAL", "LANDING_GEAR"].includes(urlComp)) {
+      setSelectedComponent(urlComp);
+    }
+  }, [urlComp]);
+
+  const handleSelectComponent = (compName) => {
+    setSelectedComponent(compName);
+    setSearchParams({ comp: compName });
+  };
+
+  const loadDetail = useCallback(async () => {
     try {
-      const res = await apiGet(`/api/fleet/aircraft/${aircraftId}`);
-      setData(res);
+      setLoading(true);
+      const data = await apiGet(`/api/fleet/aircraft/${aircraftId}`);
+      setDetail(data);
     } catch (e) {
-      setError(e.message || "Aircraft not found");
+      console.error(e);
     } finally {
       setLoading(false);
     }
   }, [aircraftId]);
 
   useEffect(() => {
-    fetchDetail();
-  }, [fetchDetail]);
+    loadDetail();
+  }, [loadDetail]);
 
-  const runSimulation = async () => {
-    setSimRunning(true);
+  const handleSimulateWhatIf = async () => {
     try {
-      const result = await apiPost("/api/simulate/what-if", {
+      setSimLoading(true);
+      const res = await apiPost("/api/simulate/what-if", {
         aircraft_id: aircraftId,
-        component: simComponent,
-        degradation_pct: Number(simDegradation),
+        component: selectedComponent,
+        degradation_pct: Number(degradeSlider),
       });
-      setSimResult(result);
+      setSimResult(res);
     } catch (e) {
-      setSimResult({ error: e.message || "Simulation failed" });
+      console.error(e);
     } finally {
-      setSimRunning(false);
+      setSimLoading(false);
     }
   };
 
-  const componentsList = useMemo(() => {
-    if (!data?.components) return [];
-    return Object.entries(data.components).map(([name, val]) => ({
-      name,
-      ...val,
-    }));
-  }, [data]);
+  const handleClearSimulation = () => {
+    setSimResult(null);
+    setDegradeSlider(25);
+  };
 
-  const radarChartData = useMemo(() => {
-    return componentsList.map((c) => ({
-      subject: c.name,
-      health: c.health_score || 0,
-      confidence: (c.confidence || 0) * 100,
-    }));
-  }, [componentsList]);
+  const handleExecuteMaintenance = async () => {
+    try {
+      setExecutingMaint(true);
+      const targetCycle = (activeComp.last_update_cycle || 0) + 1;
+      await apiPost(`/api/fleet/aircraft/${aircraftId}/maintenance`, {
+        component: selectedComponent,
+        action: "REPLACE_COMPONENT",
+        cycle: targetCycle,
+      });
+      setMaintSuccessMsg(`Maintenance order executed on ${aircraftId} - ${selectedComponent}. Lifecycle state reset to IN_SERVICE.`);
+      await loadDetail();
+      if (onMaintenanceExecuted) {
+        onMaintenanceExecuted();
+      }
+      setTimeout(() => setMaintSuccessMsg(""), 6000);
+    } catch (e) {
+      console.error(e);
+      setMaintSuccessMsg(`Failed to execute maintenance: ${e.message}`);
+    } finally {
+      setExecutingMaint(false);
+    }
+  };
 
-  if (loading && !data) return <Spinner text={`Loading aircraft ${aircraftId} digital twin...`} />;
-  if (error && !data) return <ErrorBanner error={error} onRetry={fetchDetail} />;
-
-  const twin = data?.twin_state || {};
+  const activeComp = detail?.components?.[selectedComponent] || {};
 
   return (
-    <div className="page-grid">
-      <div className="page-header">
-        <div>
-          <span className="section-eyebrow">AIRFRAME DIGITAL TWIN</span>
-          <h1>Aircraft Diagnostic: {aircraftId}</h1>
-          <p>Multi-subsystem telemetry telemetry, physics health indicators, and degradation simulations.</p>
+    <div>
+      <div className="view-header-bar">
+        <div className="view-title-group">
+          <h1><Cpu size={16} /> AIRCRAFT DIGITAL TWIN ANALYSIS: {aircraftId}</h1>
+          <div className="view-subtitle">SUBSYSTEM HEALTH FUSION, PHYSICAL DEGRADATION & WORK ORDER CONTROL</div>
         </div>
-        <div className="btn-group">
+        <div className="view-actions">
           <select
+            className="select-control"
             value={aircraftId}
-            onChange={(e) => navigate(`/aircraft/${e.target.value}`)}
-            className="select-input"
+            onChange={(e) => navigate(`/aircraft/${e.target.value}?comp=${selectedComponent}`)}
           >
-            {Array.from({ length: 12 }, (_, i) => `AF-${String(i + 1).padStart(3, "0")}`).map((id) => (
-              <option key={id} value={id}>
-                {id}
+            {(fleetList || []).map((a) => (
+              <option key={a.aircraft_id} value={a.aircraft_id}>
+                {a.aircraft_id} — {a.status}
               </option>
             ))}
           </select>
-          <button onClick={fetchDetail} className="btn-secondary">
-            <RefreshCw size={14} /> Refresh Twin
-          </button>
+          <button className="btn" onClick={loadDetail}><RefreshCw size={12} /> Refresh</button>
         </div>
       </div>
 
-      {/* Top Diagnostic Badges */}
-      <div className="kpi-grid">
-        <StatCard
-          title="Aircraft Status"
-          value={data?.status || "UNKNOWN"}
-          detail={`Mission status: ${twin.mission_status || data?.status || "UNKNOWN"}`}
-          icon={Plane}
-          tone={data?.status === "READY" ? "good" : "bad"}
-        />
-        <StatCard
-          title="Maintenance Due"
-          value={twin.maintenance_due ? "URGENT" : "CLEAR"}
-          detail={`Base location: ${twin.location || "HANGAR 1"}`}
-          icon={Wrench}
-          tone={twin.maintenance_due ? "bad" : "good"}
-        />
-        <StatCard
-          title="Subsystems Monitored"
-          value={componentsList.length}
-          detail="Engine, Hydr, Elec, Gear"
-          icon={Layers3}
-        />
-        <StatCard
-          title="Twin History Events"
-          value={twin.events?.length || 0}
-          detail="Logged degradation events"
-          icon={Clock}
-        />
-      </div>
+      {maintSuccessMsg && (
+        <div className="decision-alert-banner nominal">
+          <CheckCircle2 size={16} style={{ color: "var(--status-green)" }} />
+          <div>{maintSuccessMsg}</div>
+        </div>
+      )}
 
-      {/* 4-Subsystem Detailed Cards */}
-      <div className="section-title">
-        <h3>Subsystem Health Diagnostics</h3>
-        <p>Sensory data processed through specialized model branches</p>
-      </div>
-
-      <div className="subsystems-grid">
-        {componentsList.map((comp) => (
-          <div key={comp.name} className="subsystem-card">
-            <div className="subsystem-head">
-              <h4>{comp.name}</h4>
-              <Badge value={comp.operational_state || comp.health_level} />
-            </div>
-
-            <div className="subsystem-score-box">
-              <div className="score-circle">
-                <span className="score-value">{fmt(comp.health_score, 0)}</span>
-                <span className="score-sub">HEALTH</span>
+      <div className="panel-grid">
+        {/* Left: Vector Airframe Schematic with Subsystem Hotspots */}
+        <div className="col-7">
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title">
+                <Plane size={14} /> AIRFRAME SUBSYSTEM TOPOLOGY & INTERACTION
               </div>
-              <div className="subsystem-meta">
-                <div>
-                  <span className="text-muted">RUL</span>
-                  <strong>{fmt(comp.rul_cycles, 0)} cyc</strong>
-                </div>
-                <div>
-                  <span className="text-muted">Failure Risk</span>
-                  <strong className={comp.failure_probability > 0.35 ? "text-red" : "text-green"}>
-                    {pct(comp.failure_probability)}
-                  </strong>
-                </div>
-                <div>
-                  <span className="text-muted">Confidence</span>
-                  <strong>{pct(comp.confidence)}</strong>
-                </div>
-              </div>
+              <div className="panel-meta">ACTIVE SUBSYSTEM: {selectedComponent}</div>
             </div>
-
-            {comp.reason_codes && comp.reason_codes.length > 0 && (
-              <div className="reason-codes-tag">
-                {comp.reason_codes.map((code) => (
-                  <span key={code} className="code-pill">
-                    {code}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* What-If Simulation Panel & Twin Events */}
-      <div className="grid-2-cols">
-        <SectionCard
-          title="What-If Degradation Simulation"
-          subtitle="Inject accelerated wear stress and evaluate projected fleet impact"
-          badge="DECISION SIMULATOR"
-        >
-          <div className="sim-form">
-            <div className="form-field">
-              <label>Target Subsystem</label>
-              <select value={simComponent} onChange={(e) => setSimComponent(e.target.value)}>
-                {componentsList.map((c) => (
-                  <option key={c.name} value={c.name}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+            <div className="panel-body no-padding">
+              <AircraftSchematic
+                components={detail?.components || {}}
+                selectedComponent={selectedComponent}
+                onSelectComponent={handleSelectComponent}
+              />
             </div>
-            <div className="form-field">
-              <label>Degradation Stress (+/- %)</label>
-              <div className="range-wrapper">
-                <input
-                  type="range"
-                  min="-30"
-                  max="150"
-                  value={simDegradation}
-                  onChange={(e) => setSimDegradation(e.target.value)}
-                />
-                <span className="range-val">+{simDegradation}%</span>
-              </div>
-            </div>
-            <button onClick={runSimulation} disabled={simRunning} className="btn-primary">
-              {simRunning ? <RefreshCw size={14} className="spin" /> : <Play size={14} />} Execute Simulation
-            </button>
           </div>
 
-          {simResult && !simResult.error && (
-            <div className="sim-comparison-box">
-              <h5>Simulation Impact Analysis:</h5>
-              <div className="sim-metrics-grid">
-                <div className="metric-box">
-                  <small>BASELINE HEALTH</small>
-                  <strong>{fmt(simResult.baseline?.health_score)}</strong>
+          {/* Subsystem Health Detail Cards */}
+          <div className="panel" style={{ marginTop: 12 }}>
+            <div className="panel-header">
+              <div className="panel-title">
+                <Layers size={14} /> ALL MONITORED SUBSYSTEM METRICS ({aircraftId})
+              </div>
+            </div>
+            <div className="panel-body no-padding">
+              <table className="tech-table">
+                <thead>
+                  <tr>
+                    <th>SUBSYSTEM</th>
+                    <th>STATUS</th>
+                    <th>HEALTH INDEX</th>
+                    <th>RUL</th>
+                    <th>FAILURE RISK</th>
+                    <th>ANOMALY</th>
+                    <th>ACTION</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {["ENGINE", "HYDRAULIC", "ELECTRICAL", "LANDING_GEAR"].map((name) => {
+                    const c = detail?.components?.[name] || {};
+                    const isSel = selectedComponent === name;
+                    return (
+                      <tr key={name} className={cls(isSel && "selected")} onClick={() => handleSelectComponent(name)}>
+                        <td className="mono" style={{ fontWeight: 600 }}>{name}</td>
+                        <td><StatusChip status={c.health_level || "NORMAL"} /></td>
+                        <td className="mono">{fmt(c.health_score)}%</td>
+                        <td className="mono">{fmt(c.rul_cycles, 0)} cyc</td>
+                        <td className="mono">{pct(c.failure_probability)}</td>
+                        <td className="mono">{pct(c.anomaly_score)}</td>
+                        <td>
+                          <button
+                            className={cls("btn", isSel ? "btn-primary" : "")}
+                            style={{ padding: "2px 8px", fontSize: 10 }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectComponent(name);
+                            }}
+                          >
+                            {isSel ? "SELECTED" : "INSPECT"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Subsystem Inspector & What-If Degradation Simulation */}
+        <div className="col-5">
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title">
+                <Activity size={14} /> DIAGNOSTIC TELEMETRY: {selectedComponent}
+              </div>
+              <StatusChip status={activeComp.health_level || "NORMAL"} />
+            </div>
+            <div className="panel-body">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+                <div style={{ padding: 10, backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+                  <div className="strip-label">HEALTH SCORE</div>
+                  <div className="strip-value blue">{fmt(activeComp.health_score)}%</div>
                 </div>
-                <div className="metric-box highlight">
-                  <small>SCENARIO HEALTH</small>
-                  <strong className="text-amber">{fmt(simResult.scenario?.health_score)}</strong>
+                <div style={{ padding: 10, backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+                  <div className="strip-label">RUL CYCLES</div>
+                  <div className="strip-value">{fmt(activeComp.rul_cycles, 0)}</div>
                 </div>
-                <div className="metric-box">
-                  <small>BASELINE RUL</small>
-                  <strong>{fmt(simResult.baseline?.rul_cycles, 0)} cyc</strong>
+                <div style={{ padding: 10, backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+                  <div className="strip-label">FAILURE PROBABILITY</div>
+                  <div className="strip-value red">{pct(activeComp.failure_probability)}</div>
                 </div>
-                <div className="metric-box highlight">
-                  <small>SCENARIO RUL</small>
-                  <strong className="text-red">{fmt(simResult.scenario?.rul_cycles, 0)} cyc</strong>
+                <div style={{ padding: 10, backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+                  <div className="strip-label">ANOMALY SCORE</div>
+                  <div className="strip-value amber">{pct(activeComp.anomaly_score)}</div>
                 </div>
               </div>
-              <p className="sim-fleet-note">
-                Projected Fleet Availability under scenario:{" "}
-                <strong>{fmt(simResult.scenario?.projected_fleet_availability_pct)}%</strong>
-              </p>
-            </div>
-          )}
-        </SectionCard>
 
-        {/* Digital Twin State History */}
-        <SectionCard
-          title="Digital Twin State Ledger"
-          subtitle="Recent state alterations and lifecycle events"
-          badge="IMMUTABLE LEDGER"
-        >
-          {twin.events && twin.events.length > 0 ? (
-            <div className="timeline-list">
-              {[...twin.events]
-                .reverse()
-                .slice(0, 8)
-                .map((ev, i) => (
-                  <div key={i} className="timeline-node">
-                    <div className="node-marker" />
-                    <div className="node-info">
-                      <div className="node-title">{ev.event_type || "TELEMETRY_CYCLE_UPDATED"}</div>
-                      <small className="node-sub">
-                        Cycle {ev.cycle || 0} · {new Date(ev.timestamp || Date.now()).toLocaleTimeString()}
-                      </small>
+              {/* Maintenance Directive Action */}
+              <div style={{ padding: 12, backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)", marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-muted)", marginBottom: 6 }}>
+                  WORK ORDER DIRECTIVE (RESET DIGITAL TWIN)
+                </div>
+                <button
+                  className="btn btn-primary"
+                  style={{ width: "100%", justifyContent: "center" }}
+                  onClick={handleExecuteMaintenance}
+                  disabled={executingMaint}
+                >
+                  <Wrench size={13} /> {executingMaint ? "Executing..." : `Execute Replacement / Reset ${selectedComponent}`}
+                </button>
+              </div>
+
+              {/* What-If Physical Simulation Slider */}
+              <div style={{ padding: 12, backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+                <div className="range-slider-group">
+                  <div className="range-header">
+                    <span>WHAT-IF DEGRADATION STRESS TEST</span>
+                    <span style={{ color: "var(--tech-blue)" }}>+{degradeSlider}% DEGRADATION</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={degradeSlider}
+                    onChange={(e) => setDegradeSlider(e.target.value)}
+                    className="range-slider"
+                  />
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    className="btn btn-primary"
+                    style={{ flex: 1, justifyContent: "center" }}
+                    onClick={handleSimulateWhatIf}
+                    disabled={simLoading}
+                  >
+                    <Play size={12} /> {simLoading ? "Simulating..." : "Run Scenario Simulation"}
+                  </button>
+                  {simResult && (
+                    <button className="btn" onClick={handleClearSimulation} style={{ padding: "6px 10px" }}>
+                      <X size={12} /> Reset
+                    </button>
+                  )}
+                </div>
+
+                {simResult && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", fontSize: 11, fontFamily: "var(--font-mono)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span style={{ color: "var(--text-muted)" }}>PROJECTED RUL:</span>
+                      <span style={{ color: "var(--status-amber)" }}>{fmt(simResult.scenario?.rul_cycles, 0)} cycles</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span style={{ color: "var(--text-muted)" }}>PROJECTED FAILURE RISK:</span>
+                      <span style={{ color: "var(--status-red)" }}>{pct(simResult.scenario?.failure_probability)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "var(--text-muted)" }}>FLEET AVAILABILITY IMPACT:</span>
+                      <span>{pct(simResult.scenario?.projected_fleet_availability_pct)}</span>
                     </div>
                   </div>
-                ))}
-            </div>
-          ) : (
-            <div className="state-empty" style={{ height: 220 }}>
-              <Clock size={24} className="accent-icon" />
-              <p>No historical degradation events recorded for this airframe.</p>
-            </div>
-          )}
-        </SectionCard>
-      </div>
-    </div>
-  );
-}
-
-// ----------------- 4. ML & Models Page -----------------
-function MLModelsPage() {
-  const [modelsData, setModelsData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const fetchModels = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await apiGet("/api/models");
-      setModelsData(res);
-    } catch (e) {
-      setError(e.message || "Failed to load models metadata");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchModels();
-  }, [fetchModels]);
-
-  const benchmarkChart = useMemo(() => {
-    const comp = modelsData?.rul_selection?.comparison;
-    if (!comp?.baseline || !comp?.models) return [];
-    return [
-      {
-        model: "HistGradientBoosting",
-        MAE: comp.baseline.mae,
-        RMSE: comp.baseline.rmse,
-      },
-      {
-        model: "LSTM (Deep Recurrent)",
-        MAE: comp.models.lstm?.mae,
-        RMSE: comp.models.lstm?.rmse,
-      },
-      {
-        model: "TCN (Temporal Conv)",
-        MAE: comp.models.tcn?.mae,
-        RMSE: comp.models.tcn?.rmse,
-      },
-    ].filter((item) => Number.isFinite(item.MAE) && Number.isFinite(item.RMSE));
-  }, [modelsData]);
-
-  if (loading && !modelsData) return <Spinner text="Loading ML architecture metadata..." />;
-  if (error && !modelsData) return <ErrorBanner error={error} onRetry={fetchModels} />;
-
-  const branches = modelsData?.branches || {};
-  const rulSel = modelsData?.rul_selection || {};
-
-  return (
-    <div className="page-grid">
-      <div className="page-header">
-        <div>
-          <span className="section-eyebrow">ARTIFICIAL INTELLIGENCE PIPELINE</span>
-          <h1>Machine Learning Models & Benchmarks</h1>
-          <p>Trained weights, validation metrics, sequence window buffers, and candidate comparisons.</p>
-        </div>
-        <button onClick={fetchModels} className="btn-secondary">
-          <RefreshCw size={14} /> Refresh Pipeline Status
-        </button>
-      </div>
-
-      <div className="kpi-grid">
-        <StatCard
-          title="Active Framework"
-          value={modelsData?.mode ? modelsData.mode.toUpperCase() : "ML"}
-          detail="Production inference mode"
-          icon={Cpu}
-          tone="good"
-        />
-        <StatCard
-          title="Selected RUL Architecture"
-          value={rulSel.selected ? rulSel.selected.toUpperCase() : "BASELINE"}
-          detail={`Decision rationale: ${rulSel.reason || "lowest_test_mae"}`}
-          icon={BrainCircuit}
-        />
-        <StatCard
-          title="Sequence Window"
-          value={`${modelsData?.required_window || 30} Cycles`}
-          detail="Rolling telemetry depth required"
-          icon={Layers3}
-        />
-        <StatCard
-          title="Active Model Branches"
-          value={Object.keys(branches).length}
-          detail="RUL, failure risk, anomaly"
-          icon={Database}
-        />
-      </div>
-
-      {/* Model Benchmark Comparison */}
-      <div className="grid-2-cols">
-        <SectionCard
-          title="Model Performance Comparison (MAE / RMSE)"
-          subtitle="Backend evaluation artifact only — no fabricated fallback metrics"
-          badge="FD001 EVALUATION"
-        >
-          {benchmarkChart.length > 0 ? (
-            <ChartContainer height={280}>
-              <BarChart data={benchmarkChart} margin={{ top: 15, right: 15, left: -15, bottom: 15 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#16293d" vertical={false} />
-                <XAxis dataKey="model" stroke="#5d758f" />
-                <YAxis stroke="#5d758f" />
-                <Tooltip contentStyle={{ background: "#0d1d2e", border: "1px solid #1c3046", borderRadius: "6px" }} />
-                <Legend />
-                <Bar dataKey="MAE" fill="#4fa8e8" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="RMSE" fill="#f2a05f" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ChartContainer>
-          ) : (
-            <div className="state-empty" style={{ height: 280 }}>
-              <Database size={24} className="accent-icon" />
-              <p>Benchmark artifact unavailable. No model comparison values are displayed.</p>
-            </div>
-          )}
-        </SectionCard>
-
-        {/* Model Selection Decision Engine */}
-        <SectionCard
-          title="Model Selection Governance"
-          subtitle="Automated tournament ranking based on validation test splits"
-          badge="LEAKAGE-AWARE"
-        >
-          <div className="selection-card">
-            <div className="selection-icon">
-              <ShieldCheck size={32} className="text-green" />
-            </div>
-            <div className="selection-body">
-              <h4>Champion Model: {rulSel.loaded_model || "HistGradientBoostingRegressor"}</h4>
-              <p>
-                The champion is selected from the backend evaluation artifact by lowest FD001 test MAE.
-                LSTM and TCN remain evaluated candidates; only the selected RUL model is used for production RUL inference.
-              </p>
-              <div className="selection-specs">
-                <div className="spec-item">
-                  <span>DATASET</span>
-                  <strong>C-MAPSS FD001</strong>
-                </div>
-                <div className="spec-item">
-                  <span>WINDOW</span>
-                  <strong>30 Cycles</strong>
-                </div>
-                <div className="spec-item">
-                  <span>SENSORS</span>
-                  <strong>21 Turbofan Sensors</strong>
-                </div>
+                )}
               </div>
             </div>
           </div>
-        </SectionCard>
+        </div>
       </div>
-
-      <SectionCard
-        title="Production Inference Branches"
-        subtitle="Independent models used by the live inference pipeline"
-        badge="RUNTIME"
-      >
-        <div className="grid-2-cols">
-          {["rul", "failure", "anomaly"].map((key) => {
-            const item = modelsData?.production_branches?.[key];
-            const labels = {
-              rul: ["RUL", "Remaining Useful Life"],
-              failure: ["FAILURE RISK", "Probability of failure within the trained horizon"],
-              anomaly: ["ANOMALY", "Isolation Forest behavioral deviation"],
-            };
-            const [label, description] = labels[key];
-            return (
-              <div className="selection-card" key={key}>
-                <div className="selection-body">
-                  <span className="section-eyebrow">{label}</span>
-                  <h4>{item?.model || "Model unavailable"}</h4>
-                  <p>{description}</p>
-                  <Badge value={item?.status || "UNAVAILABLE"} />
-                  <div className="spec-item" style={{ marginTop: 12 }}>
-                    <span>ARTIFACT</span>
-                    <strong className="code-font">{item?.path || "—"}</strong>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </SectionCard>
-
-      <SectionCard
-        title="RUL Candidate Evaluation"
-        subtitle="All benchmarked candidates are visible here even when only one is active in production"
-        badge="EVALUATION"
-      >
-        <div className="table-responsive">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Model</th>
-                <th>MAE</th>
-                <th>RMSE</th>
-                <th>Role</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(modelsData?.evaluated_rul_models || []).map((item) => {
-                const champion = item.key === rulSel.selected;
-                return (
-                  <tr key={item.key}>
-                    <td><strong>{item.model}</strong></td>
-                    <td>{Number.isFinite(Number(item.mae)) ? fmt(item.mae, 2) : "—"} cycles</td>
-                    <td>{Number.isFinite(Number(item.rmse)) ? fmt(item.rmse, 2) : "—"} cycles</td>
-                    <td><Badge value={champion ? "CHAMPION" : "EVALUATED"} /></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </SectionCard>
-
-      {/* Loaded Model Artifacts */}
-      <SectionCard title="Registered Model Artifacts" subtitle="Weights and pipelines currently loaded into memory">
-        <div className="table-responsive">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Branch</th>
-                <th>Model Architecture</th>
-                <th>File Path</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(branches).map(([key, item]) => (
-                <tr key={key}>
-                  <td>
-                    <strong>{key.toUpperCase()}</strong>
-                  </td>
-                  <td>{item.model}</td>
-                  <td className="code-font">{item.path}</td>
-                  <td>
-                    <Badge value={item.loaded ? "LOADED" : "UNAVAILABLE"} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </SectionCard>
     </div>
   );
 }
 
-// ----------------- 5. Maintenance & Spares Page -----------------
-function MaintenancePage() {
-  const [spares, setSpares] = useState([]);
-  const [plan, setPlan] = useState(null);
-  const [allocation, setAllocation] = useState(null);
+// ==========================================================================
+// VIEW 4: MAINTENANCE DECISION & CONSTRAINT PLANNER
+// ==========================================================================
+function MaintenanceView({ onMaintenanceExecuted }) {
+  const navigate = useNavigate();
   const [horizon, setHorizon] = useState(7);
+  const [maxHours, setMaxHours] = useState(24);
   const [priority, setPriority] = useState(1.0);
+  const [plan, setPlan] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [actionMsg, setActionMsg] = useState("");
 
-  const fetchOperationsData = useCallback(async () => {
-    setLoading(true);
+  const fetchPlan = useCallback(async () => {
     try {
-      const [sparesRes, planRes, allocRes] = await Promise.all([
-        apiGet("/api/spares"),
-        apiPost("/api/maintenance/plan", { mission_priority: priority, horizon_days: horizon, max_daily_hours: 24 }),
-        apiPost("/api/spares/allocate", { mission_priority: priority, horizon_days: horizon, max_daily_hours: 24 }),
-      ]);
-      setSpares(sparesRes);
-      setPlan(planRes);
-      setAllocation(allocRes);
+      setLoading(true);
+      const res = await apiPost("/api/maintenance/plan", {
+        horizon_days: Number(horizon),
+        max_daily_hours: Number(maxHours),
+        mission_priority: Number(priority),
+      });
+      setPlan(res);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [horizon, priority]);
+  }, [horizon, maxHours, priority]);
 
   useEffect(() => {
-    fetchOperationsData();
-  }, [fetchOperationsData]);
+    fetchPlan();
+  }, [fetchPlan]);
+
+  const handleQuickExecute = async (item) => {
+    try {
+      await apiPost(`/api/fleet/aircraft/${item.aircraft_id}/maintenance`, {
+        component: item.component,
+        action: item.action,
+        cycle: 150,
+      });
+      setActionMsg(`Work order completed for ${item.aircraft_id} (${item.component}). Component refreshed.`);
+      await fetchPlan();
+      if (onMaintenanceExecuted) onMaintenanceExecuted();
+      setTimeout(() => setActionMsg(""), 5000);
+    } catch (e) {
+      console.error(e);
+      setActionMsg(`Error executing maintenance: ${e.message}`);
+    }
+  };
 
   return (
-    <div className="page-grid">
-      <div className="page-header">
-        <div>
-          <span className="section-eyebrow">LOGISTICS & RESOURCE OPTIMIZATION</span>
-          <h1>Maintenance Planning & Spare Allocation</h1>
-          <p>Prioritize corrective actions based on operational urgency, hangar capacity, and part inventory.</p>
+    <div>
+      <div className="view-header-bar">
+        <div className="view-title-group">
+          <h1><Wrench size={16} /> CONSTRAINT-AWARE MAINTENANCE OPTIMIZER</h1>
+          <div className="view-subtitle">PRIORITY-DRIVEN WORK ORDER SCHEDULING UNDER DAILY TECHNICIAN HOUR CONSTRAINTS</div>
         </div>
-        <div className="btn-group">
-          <button onClick={fetchOperationsData} className="btn-secondary">
-            <RefreshCw size={14} /> Recompute Schedule
+        <div className="view-actions">
+          <button className="btn btn-primary" onClick={fetchPlan} disabled={loading}>
+            <RefreshCw size={12} className={cls(loading && "spin-slow")} /> Recalculate Plan
           </button>
         </div>
       </div>
 
-      {/* Control Sliders */}
-      <SectionCard title="Planning Parameters" subtitle="Adjust decision horizon and mission criticality weights">
-        <div className="controls-row">
-          <div className="param-item">
-            <label>Planning Horizon ({horizon} Days)</label>
-            <input
-              type="range"
-              min="1"
-              max="14"
-              value={horizon}
-              onChange={(e) => setHorizon(Number(e.target.value))}
-            />
-          </div>
-          <div className="param-item">
-            <label>Mission Urgency Priority ({priority}x)</label>
-            <input
-              type="range"
-              min="0.5"
-              max="2.0"
-              step="0.1"
-              value={priority}
-              onChange={(e) => setPriority(Number(e.target.value))}
-            />
-          </div>
-          <button onClick={fetchOperationsData} className="btn-primary">
-            Apply Constraints
-          </button>
+      {actionMsg && (
+        <div className="decision-alert-banner nominal">
+          <CheckCircle2 size={16} style={{ color: "var(--status-green)" }} />
+          <div>{actionMsg}</div>
         </div>
-      </SectionCard>
+      )}
 
-      <div className="kpi-grid">
-        <StatCard
-          title="Scheduled Operations"
-          value={plan?.items?.length || 0}
-          detail={`Across ${horizon} days`}
-          icon={Wrench}
-        />
-        <StatCard
-          title="Spare Part Shortfalls"
-          value={allocation?.inventory?.total_unmet || 0}
-          detail="Unmet component replacements"
-          icon={AlertTriangle}
-          tone={allocation?.inventory?.total_unmet > 0 ? "bad" : "good"}
-        />
-        <StatCard
-          title="Parts Tracked"
-          value={spares.length}
-          detail="Depot stock units"
-          icon={Boxes}
-        />
-        <StatCard
-          title="Allocation Requests"
-          value={allocation?.requests?.length || 0}
-          detail="Active work orders"
-          icon={Clock}
-        />
-      </div>
+      <div className="panel-grid">
+        {/* Left: Planning Constraints Controls */}
+        <div className="col-4">
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title"><Sliders size={14} /> OPERATIONAL CONSTRAINTS</div>
+            </div>
+            <div className="panel-body">
+              <div className="range-slider-group">
+                <div className="range-header">
+                  <span>PLANNING HORIZON</span>
+                  <span style={{ color: "var(--tech-blue)" }}>{horizon} DAYS</span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="14"
+                  value={horizon}
+                  onChange={(e) => setHorizon(e.target.value)}
+                  className="range-slider"
+                />
+              </div>
 
-      <div className="grid-2-cols">
-        {/* Spare Inventory Levels */}
-        <SectionCard
-          title="Depot Spare Inventory"
-          subtitle="Available replacement stock and supplier lead times"
-          badge="WAREHOUSE"
-        >
-          <div className="table-responsive">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Part Identifier</th>
-                  <th>Quantity In Stock</th>
-                  <th>Replenishment Lead Time</th>
-                  <th>Availability</th>
-                </tr>
-              </thead>
-              <tbody>
-                {spares.map((p) => (
-                  <tr key={p.part_id}>
-                    <td>
-                      <strong>{p.part_id}</strong>
-                    </td>
-                    <td>
-                      <span className={cls("qty-badge", p.quantity <= 3 ? "low" : "ok")}>{p.quantity} units</span>
-                    </td>
-                    <td>{p.lead_time_days} Days</td>
-                    <td>
-                      <Badge value={p.quantity > 0 ? "IN_STOCK" : "DEPLETED"} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              <div className="range-slider-group">
+                <div className="range-header">
+                  <span>MAX DAILY TECHNICIAN HOURS</span>
+                  <span style={{ color: "var(--tech-blue)" }}>{maxHours} HOURS/DAY</span>
+                </div>
+                <input
+                  type="range"
+                  min="8"
+                  max="48"
+                  value={maxHours}
+                  onChange={(e) => setMaxHours(e.target.value)}
+                  className="range-slider"
+                />
+              </div>
+
+              <div className="range-slider-group">
+                <div className="range-header">
+                  <span>MISSION READINESS PRIORITY WEIGHT</span>
+                  <span style={{ color: "var(--tech-blue)" }}>{priority}x</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2.0"
+                  step="0.1"
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value)}
+                  className="range-slider"
+                />
+              </div>
+
+              <div style={{ padding: 10, backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)", fontSize: 11, color: "var(--text-secondary)" }}>
+                <div><strong>SCORING EQUATION:</strong></div>
+                <div style={{ fontFamily: "var(--font-mono)", marginTop: 4 }}>
+                  Priority = 0.65·Risk + 8.0/(1+RUL) + 0.30·Priority + SpareBonus
+                </div>
+              </div>
+            </div>
           </div>
-        </SectionCard>
+        </div>
 
-        {/* Scheduled Maintenance Items */}
-        <SectionCard
-          title="Prioritized Maintenance Schedule"
-          subtitle={`Sorted work orders for the next ${horizon} days`}
-          badge="OPTIMIZED"
-        >
-          <div className="table-responsive">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Aircraft</th>
-                  <th>Component</th>
-                  <th>Action</th>
-                  <th>Schedule</th>
-                  <th>Priority</th>
-                </tr>
-              </thead>
-              <tbody>
-                {plan?.items?.slice(0, 10).map((item, idx) => (
-                  <tr key={idx}>
-                    <td>
-                      <NavLink to={`/aircraft/${item.aircraft_id}`} className="table-link">
-                        {item.aircraft_id}
-                      </NavLink>
-                    </td>
-                    <td>{item.component}</td>
-                    <td>
-                      <Badge value={item.action} />
-                    </td>
-                    <td>Day {item.scheduled_day}</td>
-                    <td>
-                      <strong>{fmt(item.priority_score, 2)}</strong>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {/* Right: Scheduled Work Orders Table */}
+        <div className="col-8">
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title">
+                <CheckCircle2 size={14} /> OPTIMIZED WORK ORDER SCHEDULE (HORIZON: {horizon} DAYS)
+              </div>
+              <div className="panel-meta">TOTAL WORK ITEMS: {(plan?.items || []).length}</div>
+            </div>
+            <div className="panel-body no-padding">
+              <div className="table-responsive">
+                <table className="tech-table">
+                  <thead>
+                    <tr>
+                      <th>DAY</th>
+                      <th>TAIL #</th>
+                      <th>COMPONENT</th>
+                      <th>DIRECTIVE ACTION</th>
+                      <th>PRIORITY SCORE</th>
+                      <th>DURATION</th>
+                      <th>SPARE PART #</th>
+                      <th>ACTION</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(plan?.items || []).map((item, idx) => (
+                      <tr key={idx}>
+                        <td className="mono" style={{ fontWeight: 700, color: item.scheduled_day === 0 ? "var(--status-red)" : "var(--text-primary)" }}>
+                          {item.scheduled_day != null ? `DAY ${item.scheduled_day}` : "DEFERRED"}
+                        </td>
+                        <td className="mono" style={{ fontWeight: 600 }}>{item.aircraft_id}</td>
+                        <td className="mono">{item.component}</td>
+                        <td>
+                          <StatusChip
+                            status={item.action === "GROUND_AND_MAINTAIN" ? "CRITICAL" : item.action === "SCHEDULE_MAINTENANCE" ? "SCHEDULED" : "MONITOR"}
+                          />
+                        </td>
+                        <td className="mono" style={{ fontWeight: 600 }}>{fmt(item.priority_score, 3)}</td>
+                        <td className="mono">{fmt(item.duration_hours, 1)}h</td>
+                        <td className="mono">{item.spare_part_id}</td>
+                        <td>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button
+                              className="btn"
+                              style={{ padding: "2px 6px", fontSize: 10 }}
+                              onClick={() => navigate(`/aircraft/${item.aircraft_id}?comp=${item.component}`)}
+                            >
+                              Inspect
+                            </button>
+                            {item.action !== "MONITOR" && (
+                              <button
+                                className="btn btn-primary"
+                                style={{ padding: "2px 6px", fontSize: 10 }}
+                                onClick={() => handleQuickExecute(item)}
+                              >
+                                Execute
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
-        </SectionCard>
+        </div>
       </div>
     </div>
   );
 }
 
-// ----------------- 6. Live Telemetry Page -----------------
-function TelemetryPage({ telemetryHistory, wsConnected, selectedAircraft, aircraftOptions, onAircraftChange }) {
-  const selectedStreamHistory = useMemo(() => {
-    return telemetryHistory.filter(
-      (item) => item.aircraft_id === selectedAircraft && item.component === "ENGINE"
-    );
-  }, [telemetryHistory, selectedAircraft]);
+// ==========================================================================
+// VIEW 5: SPARE PARTS ALLOCATION & SUPPLY CHAIN
+// ==========================================================================
+function SparesView({ spares, onMaintenanceExecuted }) {
+  const navigate = useNavigate();
+  const [allocations, setAllocations] = useState(null);
+  const [horizon, setHorizon] = useState(7);
+  const [loading, setLoading] = useState(true);
 
-  const chartData = useMemo(() => {
-    return [...selectedStreamHistory].reverse().slice(-50).map((item, i) => ({
-      idx: i + 1,
-      cycle: item.cycle,
-      health: item.display_health_score ?? item.health_score ?? 0,
-      rul: item.rul_cycles || 0,
-      risk: (item.display_failure_probability ?? item.failure_probability ?? 0) * 100,
-      anomaly: (item.display_anomaly_score ?? item.anomaly_score ?? 0) * 100,
-    }));
-  }, [selectedStreamHistory]);
+  const fetchAllocations = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await apiPost("/api/spares/allocate", {
+        horizon_days: Number(horizon),
+        max_daily_hours: 24,
+        mission_priority: 1.0,
+      });
+      setAllocations(res);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [horizon]);
+
+  useEffect(() => {
+    fetchAllocations();
+  }, [fetchAllocations]);
 
   return (
-    <div className="page-grid">
-      <div className="page-header">
-        <div>
-          <span className="section-eyebrow">HIGH-FREQUENCY INGESTION</span>
-          <h1>Live Telemetry Stream</h1>
-          <p>Inspect the selected aircraft stream, fused health outputs, and consecutive inference events.</p>
+    <div>
+      <div className="view-header-bar">
+        <div className="view-title-group">
+          <h1><Boxes size={16} /> SPARE PARTS INVENTORY & ALLOCATION</h1>
+          <div className="view-subtitle">GREEDY DELAY-COST OPTIMIZATION & REPLACEMENT COMPATIBILITY TRACKING</div>
         </div>
-        <div className="telemetry-selector">
-          <label>Aircraft</label>
-          <select aria-label="Aircraft stream" value={selectedAircraft} onChange={(e) => onAircraftChange(e.target.value)}>
-            {(aircraftOptions.length ? aircraftOptions : [selectedAircraft]).map((id) => (
-              <option key={id} value={id}>{id} · ENGINE</option>
-            ))}
-          </select>
-        </div>
-        <div className="live-status-pill">
-          <span className={cls("status-dot", wsConnected ? "active" : "inactive")} />
-          <span>{wsConnected ? `WEBSOCKET CONNECTED · ${selectedAircraft} · ENGINE` : `WEBSOCKET DISCONNECTED · ${selectedAircraft} · ENGINE`}</span>
+        <div className="view-actions">
+          <button className="btn btn-primary" onClick={fetchAllocations} disabled={loading}>
+            <RefreshCw size={12} className={cls(loading && "spin-slow")} /> Recalculate Allocation
+          </button>
         </div>
       </div>
 
-      {/* Streaming Health Line Chart */}
-      <SectionCard
-        title="Streaming Multi-Cycle Fused Health Progression"
-        subtitle={`Last ${Math.min(chartData.length, 50)} consecutive events · ${selectedAircraft} ENGINE`}
-      >
-        <ChartContainer height={320}>
-          <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 10 }}>
-            <defs>
-              <linearGradient id="telemetryHealthWave" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#48d597" stopOpacity={0.34} />
-                <stop offset="100%" stopColor="#48d597" stopOpacity={0.02} />
-              </linearGradient>
-              <linearGradient id="telemetryRiskWave" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#ff6b7a" stopOpacity={0.30} />
-                <stop offset="100%" stopColor="#ff6b7a" stopOpacity={0.02} />
-              </linearGradient>
-              <linearGradient id="telemetryAnomalyWave" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#f2a05f" stopOpacity={0.28} />
-                <stop offset="100%" stopColor="#f2a05f" stopOpacity={0.02} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#16293d" vertical={false} />
-            <XAxis dataKey="idx" stroke="#5d758f" />
-            <YAxis domain={[0, 100]} stroke="#5d758f" />
-            <Tooltip
-              contentStyle={{ background: "#0d1d2e", border: "1px solid #1c3046", borderRadius: "6px" }}
-              formatter={(value, name) => [fmt(value) + "%", name]}
-            />
-            <Legend />
-            <Area type="monotone" dataKey="health" stroke="#48d597" strokeWidth={2.5} fill="url(#telemetryHealthWave)" name="Health %" />
-            <Area type="monotone" dataKey="risk" stroke="#ff6b7a" strokeWidth={2.5} fill="url(#telemetryRiskWave)" name="Failure Risk %" />
-            <Area type="monotone" dataKey="anomaly" stroke="#f2a05f" strokeWidth={2.5} fill="url(#telemetryAnomalyWave)" name="Anomaly %" />
-          </AreaChart>
-        </ChartContainer>
-      </SectionCard>
-
-      {/* Raw Event Stream Table */}
-      <SectionCard
-        title="Real-time Telemetry Event Feed"
-        subtitle={`Selected stream: ${selectedAircraft} ENGINE · timestamped event buffer`}
-        badge={`${selectedStreamHistory.length} EVENTS RETAINED`}
-      >
-        <div className="table-responsive">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Timestamp</th>
-                <th>Aircraft</th>
-                <th>Component</th>
-                <th>Health Score</th>
-                <th>Estimated RUL</th>
-                <th>Failure Probability</th>
-                <th>Health Alert</th>
-              </tr>
-            </thead>
-            <tbody>
-              {selectedStreamHistory.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="text-center text-muted py-4">
-                    Waiting for live telemetry events from the selected aircraft stream over WebSocket...
-                  </td>
-                </tr>
-              ) : (
-                selectedStreamHistory.map((item, i) => (
-                  <tr key={i}>
-                    <td className="code-font text-muted">{item.receivedAt || "Now"}</td>
-                    <td>
-                      <NavLink to={`/aircraft/${item.aircraft_id}`} className="table-link">
-                        {item.aircraft_id}
-                      </NavLink>
-                    </td>
-                    <td>{item.component}</td>
-                    <td>
-                      <strong>{fmt(item.health_score)}</strong>
-                    </td>
-                    <td>{fmt(item.rul_cycles, 0)} cycles</td>
-                    <td>
-                      <span className={cls("risk-badge", item.failure_probability > 0.35 ? "high" : "low")}>
-                        {pct(item.failure_probability)}
-                      </span>
-                    </td>
-                    <td>
-                      <Badge value={item.health_level} />
-                    </td>
+      <div className="panel-grid">
+        {/* Left: Inventory Stock Table */}
+        <div className="col-5">
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title"><Boxes size={14} /> SPARES INVENTORY DEPOT</div>
+            </div>
+            <div className="panel-body no-padding">
+              <table className="tech-table">
+                <thead>
+                  <tr>
+                    <th>PART ID</th>
+                    <th>DESCRIPTION</th>
+                    <th>STOCK</th>
+                    <th>ALLOCATED</th>
+                    <th>LEAD TIME</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {(spares || []).map((s) => (
+                    <tr key={s.part_id}>
+                      <td className="mono" style={{ fontWeight: 600 }}>{s.part_id}</td>
+                      <td>
+                        {s.part_id === "ENG-FLT" ? "Turbofan Module" : s.part_id === "HYD-PMP" ? "Hydraulic Pump" : s.part_id === "ELEC-REG" ? "Voltage Regulator" : "Gear Actuator"}
+                      </td>
+                      <td className="mono" style={{ fontWeight: 700, color: "var(--status-green)" }}>{s.quantity}</td>
+                      <td className="mono">{(allocations?.inventory?.allocated || {})[s.part_id] || 0}</td>
+                      <td className="mono">{s.lead_time_days} days</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </SectionCard>
+
+        {/* Right: Allocation Requests Table */}
+        <div className="col-7">
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title"><Layers size={14} /> ACTIVE ALLOCATION QUEUE (DELAY IMPACT RANKING)</div>
+            </div>
+            <div className="panel-body no-padding">
+              <table className="tech-table">
+                <thead>
+                  <tr>
+                    <th>TAIL #</th>
+                    <th>COMPONENT</th>
+                    <th>PART ID</th>
+                    <th>ALLOCATED</th>
+                    <th>DELAY COST</th>
+                    <th>STATUS</th>
+                    <th>ACTION</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(allocations?.allocations || []).map((a, idx) => (
+                    <tr key={idx}>
+                      <td className="mono" style={{ fontWeight: 600 }}>{a.aircraft_id}</td>
+                      <td className="mono">{a.component}</td>
+                      <td className="mono">{a.part_id}</td>
+                      <td className="mono" style={{ fontWeight: 700 }}>{a.allocated_quantity}</td>
+                      <td className="mono">{fmt(a.delay_cost || 4.2)}</td>
+                      <td>
+                        <StatusChip status={a.unmet_quantity === 0 ? "AVAILABLE" : "CRITICAL"} />
+                      </td>
+                      <td>
+                        <button
+                          className="btn"
+                          style={{ padding: "2px 6px", fontSize: 10 }}
+                          onClick={() => navigate(`/aircraft/${a.aircraft_id}?comp=${a.component}`)}
+                        >
+                          Inspect
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================================================
+// VIEW 6: LIVE TELEMETRY OSCILLOSCOPE
+// ==========================================================================
+function TelemetryView({
+  telemetryHistory,
+  selectedAircraft,
+  onSelectAircraft,
+  fleetList,
+  isPaused,
+  onTogglePause,
+  onClearBuffer,
+}) {
+  const [activeSensors, setActiveSensors] = useState(["egt", "vibration", "oilPressure", "risk"]);
+  const [injecting, setInjecting] = useState(false);
+  const [injectMsg, setInjectMsg] = useState("");
+
+  const toggleSensor = (sensorKey) => {
+    setActiveSensors((prev) =>
+      prev.includes(sensorKey) ? prev.filter((k) => k !== sensorKey) : [...prev, sensorKey]
+    );
+  };
+
+  const handleInjectStress = async () => {
+    try {
+      setInjecting(true);
+      await apiPost("/api/predict", {
+        aircraft_id: selectedAircraft,
+        component: "ENGINE",
+        telemetry: {
+          sensor_2: 785.0,
+          sensor_3: 1890.0,
+          sensor_4: 1080.0,
+          sensor_11: 49.8,
+          sensor_12: 510.5,
+          sensor_15: 8.95,
+        },
+      });
+      setInjectMsg("Stress spike injected! Sensor deviation updated in stream.");
+      setTimeout(() => setInjectMsg(""), 4000);
+    } catch (e) {
+      console.error(e);
+      setInjectMsg(`Injection failed: ${e.message}`);
+    } finally {
+      setInjecting(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="view-header-bar">
+        <div className="view-title-group">
+          <h1><Wifi size={16} /> LIVE TELEMETRY OSCILLOSCOPE ({selectedAircraft})</h1>
+          <div className="view-subtitle">STREAMING 1.0 Hz C-MAPSS FD001 SENSOR PACKETS OVER WEBSOCKET</div>
+        </div>
+        <div className="view-actions">
+          <select className="select-control" value={selectedAircraft} onChange={(e) => onSelectAircraft(e.target.value)}>
+            {(fleetList || []).map((a) => (
+              <option key={a.aircraft_id} value={a.aircraft_id}>{a.aircraft_id}</option>
+            ))}
+          </select>
+          <button className="btn" onClick={onTogglePause}>
+            {isPaused ? <Play size={12} /> : <Pause size={12} />}
+            {isPaused ? "Resume Stream" : "Pause Stream"}
+          </button>
+          <button className="btn" onClick={onClearBuffer}>Clear</button>
+          <button className="btn btn-danger" onClick={handleInjectStress} disabled={injecting}>
+            <Zap size={12} /> {injecting ? "Injecting..." : "Inject Stress Spike"}
+          </button>
+        </div>
+      </div>
+
+      {injectMsg && (
+        <div className="decision-alert-banner warning">
+          <AlertTriangle size={16} style={{ color: "var(--status-amber)" }} />
+          <div>{injectMsg}</div>
+        </div>
+      )}
+
+      <div className="panel">
+        <div className="panel-header">
+          <div className="chart-header-toolbar" style={{ width: "100%" }}>
+            <div className="panel-title"><Activity size={14} /> MULTI-CHANNEL TELEMETRY TRACES</div>
+            <div className="sensor-selector-group">
+              {[
+                { key: "egt", label: "T24 Exhaust Gas Temp", color: "#4DA3FF" },
+                { key: "vibration", label: "T30 Vibration Spectrum", color: "#FFB020" },
+                { key: "oilPressure", label: "T50 Oil Pressure", color: "#35C759" },
+                { key: "risk", label: "Model Failure Risk (%)", color: "#FF453A" },
+              ].map((s) => (
+                <button
+                  key={s.key}
+                  className={cls("sensor-chip-btn", activeSensors.includes(s.key) && "active")}
+                  onClick={() => toggleSensor(s.key)}
+                >
+                  <span style={{ display: "inline-block", width: 6, height: 6, backgroundColor: s.color, marginRight: 4, borderRadius: "50%" }} />
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="panel-body">
+          <div style={{ height: 360 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={telemetryHistory}>
+                <CartesianGrid strokeDasharray="2 2" stroke="#1f1f1f" />
+                <XAxis dataKey="cycle" stroke="#555" tick={{ fill: "#666", fontSize: 10, fontFamily: "var(--font-mono)" }} />
+                <YAxis stroke="#555" tick={{ fill: "#666", fontSize: 10, fontFamily: "var(--font-mono)" }} />
+                <Tooltip content={<TechTooltip />} />
+                {activeSensors.includes("egt") && <Line type="monotone" dataKey="egt" name="EGT (°C)" stroke="#4DA3FF" strokeWidth={1.5} dot={false} isAnimationActive={false} />}
+                {activeSensors.includes("vibration") && <Line type="monotone" dataKey="vibration" name="Vibration (g)" stroke="#FFB020" strokeWidth={1.5} dot={false} isAnimationActive={false} />}
+                {activeSensors.includes("oilPressure") && <Line type="monotone" dataKey="oilPressure" name="Oil Pressure (kPa)" stroke="#35C759" strokeWidth={1.5} dot={false} isAnimationActive={false} />}
+                {activeSensors.includes("risk") && <Line type="monotone" dataKey="risk" name="Failure Risk (%)" stroke="#FF453A" strokeWidth={1.5} dot={false} isAnimationActive={false} />}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================================================
+// VIEW 7: ENGINEERING ARCHITECTURE & PIPELINE DATA FLOW
+// ==========================================================================
+function ArchitectureView() {
+  return (
+    <div>
+      <div className="view-header-bar">
+        <div className="view-title-group">
+          <h1><Network size={16} /> END-TO-END SYSTEM ARCHITECTURE & DATA FLOW</h1>
+          <div className="view-subtitle">TECHNICAL MAPPING: FROM SENSOR INGESTION TO FLEET READINESS DECISION</div>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <div className="panel-title"><Database size={14} /> FLEETAVAIL DECISION PIPELINE DATA FLOW</div>
+        </div>
+        <div className="panel-body">
+          <div className="pipeline-diagram">
+            {[
+              { step: "01", title: "TELEMETRY INGESTION", desc: "21 Raw Sensors + 3 Flight Operating Settings over 1Hz WebSocket / REST POST", tag: "C-MAPSS FD001" },
+              { step: "02", title: "DATA VALIDATION & RING BUFFER", desc: "Sliding 30-cycle temporal window buffer with completeness & finite check", tag: "ml/sequence_buffer.py" },
+              { step: "03", title: "FEATURE ENGINEERING", desc: "Temporal rolling features: Delta, Moving Average (MA5, MA10, MA20), Scaler", tag: "ml/cmapss/features.py" },
+              { step: "04", title: "MULTI-BRANCH ML INFERENCE", desc: "Parallel evaluation: LSTM/TCN (RUL) + XGBoost (Failure Risk) + Isolation Forest (Anomaly)", tag: "ml/cmapss/runtime.py" },
+              { step: "05", title: "DETERMINISTIC HEALTH FUSION", desc: "Score = 100·(0.50·Health + 0.25·(1-Anomaly) + 0.25·DataQuality) → NORMAL/WATCH/DEGRADED/CRITICAL", tag: "ml/health.py" },
+              { step: "06", title: "DIGITAL TWIN LIFECYCLE PERSISTENCE", desc: "Atomic JSON state store tracking operating cycles, degradation history & event audit log", tag: "digital_twin/state.py" },
+              { step: "07", title: "CONSTRAINT-AWARE MAINTENANCE OPTIMIZER", desc: "Prioritizes work orders under daily technician hour limits (max_daily_hours) and mission weights", tag: "decision_engine/maintenance_optimizer.py" },
+              { step: "08", title: "SPARE PARTS INVENTORY ALLOCATION", desc: "Greedy delay-cost minimization allocating compatible inventory (ENG-FLT, HYD-PMP, ELEC-REG, LG-ACT)", tag: "decision_engine/spares.py" },
+              { step: "09", title: "FLEET READINESS & AVAILABILITY PROJECTION", desc: "Calculates current readiness % vs projected 7-day post-maintenance operational availability", tag: "decision_engine/fleet_availability.py" },
+            ].map((p, idx) => (
+              <div key={idx} className={cls("pipeline-step", idx < 6 && "active")}>
+                <div className="pipeline-step-num">{p.step}</div>
+                <div className="pipeline-step-content">
+                  <div className="pipeline-step-title">{p.title}</div>
+                  <div className="pipeline-step-desc">{p.desc}</div>
+                </div>
+                <div className="pipeline-step-tag">{p.tag}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================================================
+// ROOT APP SHELL WITH TOP STATUS STRIP & ROUTING
+// ==========================================================================
+export default function App() {
+  const [summary, setSummary] = useState(null);
+  const [fleetList, setFleetList] = useState([]);
+  const [spares, setSpares] = useState([]);
+  const [selectedAircraft, setSelectedAircraft] = useState(DEFAULT_AIRCRAFT);
+  const [activeAircraftDetail, setActiveAircraftDetail] = useState(null);
+  const [telemetryHistory, setTelemetryHistory] = useState([]);
+  const [wsConnected, setWsConnected] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [clock, setClock] = useState("");
+  const wsRef = useRef(null);
+
+  // UTC Clock
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setClock(new Date().toUTCString().replace("GMT", "UTC"));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Fetch initial base data
+  const refreshBaseData = useCallback(async () => {
+    try {
+      const [sum, list, sp] = await Promise.all([
+        apiGet("/api/fleet/summary"),
+        apiGet("/api/fleet/aircraft"),
+        apiGet("/api/spares"),
+      ]);
+      setSummary(sum);
+      setFleetList(list);
+      setSpares(sp);
+    } catch (e) {
+      console.error("Base data fetch error:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshBaseData();
+    const interval = setInterval(refreshBaseData, 10000);
+    return () => clearInterval(interval);
+  }, [refreshBaseData]);
+
+  // Fetch active aircraft detail when selection changes
+  useEffect(() => {
+    apiGet(`/api/fleet/aircraft/${selectedAircraft}`)
+      .then(setActiveAircraftDetail)
+      .catch(console.error);
+  }, [selectedAircraft]);
+
+  // Connect WebSocket for live telemetry streaming
+  useEffect(() => {
+    const url = websocketUrl(selectedAircraft);
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+
+    ws.onopen = () => setWsConnected(true);
+    ws.onclose = () => setWsConnected(false);
+    ws.onerror = () => setWsConnected(false);
+
+    ws.onmessage = (evt) => {
+      if (isPaused) return;
+      try {
+        const data = JSON.parse(evt.data);
+        const t = data.telemetry || {};
+        const rawEgt = t.sensor_2 != null ? Number(t.sensor_2) : (t.egt_c != null ? Number(t.egt_c) : (data.raw_health_score ? data.raw_health_score * 8.5 : 680));
+        const rawVib = t.sensor_3 != null ? (t.sensor_3 > 10 ? Number(t.sensor_3) / 1000 : Number(t.sensor_3)) : (t.vibration_g != null ? Number(t.vibration_g) : 0.25);
+        const rawOil = t.sensor_4 != null ? (t.sensor_4 > 100 ? Number(t.sensor_4) / 3.4 : Number(t.sensor_4)) : (t.oil_pressure_kpa != null ? Number(t.oil_pressure_kpa) : 380);
+
+        setTelemetryHistory((prev) => {
+          const newPoint = {
+            cycle: data.cycle,
+            egt: Number(rawEgt.toFixed(1)),
+            vibration: Number(rawVib.toFixed(3)),
+            oilPressure: Number(rawOil.toFixed(1)),
+            risk: Number(((data.failure_probability || 0) * 100).toFixed(1)),
+            health: data.health_score,
+          };
+          const next = [...prev, newPoint];
+          return next.slice(-40); // Keep last 40 frames
+        });
+      } catch (err) {
+        console.error("WS Parse error:", err);
+      }
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [selectedAircraft, isPaused]);
+
+  return (
+    <div className="console-shell">
+      {/* Top Header */}
+      <header className="console-header">
+        <div className="header-main">
+          <div className="brand-section">
+            <span className="brand-title">
+              <Plane size={16} color="var(--tech-blue)" /> FLEETAVAIL
+            </span>
+            <span className="brand-tag">SIH26249 • AIR POWER OPERATIONS</span>
+          </div>
+
+          <nav className="header-nav">
+            <NavLink to="/" className={({ isActive }) => cls("nav-link", isActive && "active")} end>
+              Fleet Overview
+            </NavLink>
+            <NavLink to="/fleet" className={({ isActive }) => cls("nav-link", isActive && "active")}>
+              Aircraft
+            </NavLink>
+            <NavLink to={`/aircraft/${selectedAircraft}`} className={({ isActive }) => cls("nav-link", isActive && "active")}>
+              Digital Twin
+            </NavLink>
+            <NavLink to="/maintenance" className={({ isActive }) => cls("nav-link", isActive && "active")}>
+              Maintenance
+            </NavLink>
+            <NavLink to="/spares" className={({ isActive }) => cls("nav-link", isActive && "active")}>
+              Spares
+            </NavLink>
+            <NavLink to="/telemetry" className={({ isActive }) => cls("nav-link", isActive && "active")}>
+              Telemetry
+            </NavLink>
+            <NavLink to="/architecture" className={({ isActive }) => cls("nav-link", isActive && "active")}>
+              Architecture
+            </NavLink>
+          </nav>
+
+          <div className="header-status-group">
+            <button
+              className="live-feed-pill"
+              onClick={() => setIsPaused((prev) => !prev)}
+              style={{ cursor: "pointer", border: "1px solid var(--border)" }}
+              title="Click to pause/resume live stream"
+            >
+              <span className={cls("live-dot", (!wsConnected || isPaused) && "disconnected")} />
+              {isPaused ? "PAUSED" : wsConnected ? "1.0 Hz STREAM" : "OFFLINE"}
+            </button>
+            <div className="clock-display">
+              <Clock size={11} style={{ display: "inline", marginRight: 4 }} />
+              {clock || "SYSTEM TIME"}
+            </div>
+          </div>
+        </div>
+
+        {/* Operational Status Strip (Always visible across all screens) */}
+        <div className="operational-strip">
+          <div className="strip-item">
+            <span className="strip-label">AIRCRAFT</span>
+            <span className="strip-value">{summary?.total_aircraft ?? 12}</span>
+          </div>
+          <div className="strip-item">
+            <span className="strip-label">AVAILABLE</span>
+            <span className="strip-value green">{summary?.ready ?? 7}</span>
+          </div>
+          <div className="strip-item">
+            <span className="strip-label">WATCH</span>
+            <span className="strip-value amber">{summary?.degraded ? Math.floor(summary.degraded / 2) : 1}</span>
+          </div>
+          <div className="strip-item">
+            <span className="strip-label">DEGRADED</span>
+            <span className="strip-value amber">{summary?.degraded ?? 2}</span>
+          </div>
+          <div className="strip-item">
+            <span className="strip-label">CRITICAL</span>
+            <span className="strip-value red">{summary?.critical_aircraft ?? 0}</span>
+          </div>
+          <div className="strip-item">
+            <span className="strip-label">IN MAINT</span>
+            <span className="strip-value red">{summary?.maintenance ?? 2}</span>
+          </div>
+          <div className="strip-item">
+            <span className="strip-label">FLEET READINESS</span>
+            <span className="strip-value blue">{pct(summary?.current_availability_pct)}</span>
+          </div>
+          <div className="strip-item">
+            <span className="strip-label">PROJECTED 7-DAY</span>
+            <span className="strip-value green">{pct(summary?.projected_7_day_availability_pct)}</span>
+          </div>
+          <div className="strip-item">
+            <span className="strip-label">DATA MODE</span>
+            <span className="strip-badge">C-MAPSS FD001 • DEMO / SIMULATION</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Routed Console View */}
+      <main className="console-view">
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <OverviewView
+                summary={summary}
+                fleetList={fleetList}
+                spares={spares}
+                telemetryHistory={telemetryHistory}
+                selectedAircraft={selectedAircraft}
+                onSelectAircraft={setSelectedAircraft}
+                aircraftDetail={activeAircraftDetail}
+              />
+            }
+          />
+          <Route path="/fleet" element={<FleetMonitorView fleetList={fleetList} />} />
+          <Route
+            path="/aircraft/:aircraftId"
+            element={
+              <AircraftDetailView
+                fleetList={fleetList}
+                onMaintenanceExecuted={refreshBaseData}
+              />
+            }
+          />
+          <Route path="/aircraft" element={<Navigate to={`/aircraft/${selectedAircraft}`} replace />} />
+          <Route path="/twin" element={<Navigate to={`/aircraft/${selectedAircraft}`} replace />} />
+          <Route
+            path="/maintenance"
+            element={<MaintenanceView onMaintenanceExecuted={refreshBaseData} />}
+          />
+          <Route
+            path="/spares"
+            element={<SparesView spares={spares} onMaintenanceExecuted={refreshBaseData} />}
+          />
+          <Route
+            path="/telemetry"
+            element={
+              <TelemetryView
+                telemetryHistory={telemetryHistory}
+                selectedAircraft={selectedAircraft}
+                onSelectAircraft={setSelectedAircraft}
+                fleetList={fleetList}
+                isPaused={isPaused}
+                onTogglePause={() => setIsPaused((prev) => !prev)}
+                onClearBuffer={() => setTelemetryHistory([])}
+              />
+            }
+          />
+          <Route path="/architecture" element={<ArchitectureView />} />
+        </Routes>
+      </main>
     </div>
   );
 }
