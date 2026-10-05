@@ -105,4 +105,4 @@ npm ci
 npm run build
 ```
 
-The captured local verification report is available at http://127.0.0.1:8000/fleetavail/testing and as a static page at `testing/index.html`.
+The captured local verification report is available at http://127.0.0.1:8000/fleetavail/testing and as a static page at `fleetavail/testing/index.html`.
