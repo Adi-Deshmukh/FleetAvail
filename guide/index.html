@@ -1,0 +1,1182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FleetAvail — Complete Codebase & Concepts Guide</title>
+<style>
+:root{
+  --bg:#07111f;--panel:#0b1928;--panel2:#091522;--line:#1a2d42;
+  --text:#e8eef7;--muted:#8aa0b8;--dim:#5f7790;--blue:#4fa8e8;
+  --cyan:#38bdf8;--green:#48d597;--amber:#f2a05f;--red:#ff6b7a;--purple:#a78bfa;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+a{color:var(--cyan);text-decoration:none}a:hover{text-decoration:underline}
+code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+code{background:#0e2033;padding:.12em .35em;border-radius:4px;color:#cfe8ff}
+pre{overflow:auto;background:#06101c;border:1px solid var(--line);border-radius:10px;padding:14px;font-size:12px;line-height:1.55;color:#d9e7f5}
+.wrap{max-width:1450px;margin:auto;padding:26px}
+.hero{padding:28px;border:1px solid var(--line);background:linear-gradient(135deg,#0a1828,#0b1b2d);border-radius:16px}
+.eyebrow{font-size:11px;font-weight:800;letter-spacing:.13em;color:var(--blue)}
+h1{font-size:34px;line-height:1.15;margin:.25rem 0 .6rem}
+h2{font-size:24px;line-height:1.2;margin:34px 0 12px;padding-top:10px;border-top:1px solid var(--line)}
+h3{font-size:18px;margin:26px 0 8px}
+h4{font-size:15px;margin:20px 0 6px}
+p{margin:8px 0;color:#d9e4ef}
+.lead{font-size:17px;color:#c4d3e3;max-width:1000px}
+.badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.badge{font-size:10px;font-weight:800;letter-spacing:.05em;padding:5px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel)}
+.badge.green{color:var(--green)}.badge.amber{color:var(--amber)}.badge.blue{color:var(--blue)}
+.layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:24px;align-items:start;margin-top:22px}
+.nav{position:sticky;top:14px;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:14px;max-height:calc(100vh - 28px);overflow:auto}
+.nav strong{display:block;margin-bottom:8px}
+.nav a{display:block;font-size:12px;color:var(--muted);padding:5px 4px;border-radius:5px}
+.nav a:hover{background:var(--panel2);color:#fff;text-decoration:none}
+.content{min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin:14px 0}
+.card.blue{border-left:3px solid var(--blue)}.card.green{border-left:3px solid var(--green)}.card.amber{border-left:3px solid var(--amber)}.card.red{border-left:3px solid var(--red)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.kpi{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px}
+.kpi .n{font-size:24px;font-weight:800}.kpi .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12px}
+th,td{text-align:left;padding:9px 8px;border-bottom:1px solid rgba(26,45,66,.75);vertical-align:top}
+th{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.term{display:inline-block;color:var(--cyan);border-bottom:1px dotted var(--cyan)}
+.flow{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin:12px 0}
+.node{padding:8px 10px;border:1px solid var(--line);background:var(--panel2);border-radius:7px;font-size:11px;font-weight:700}
+.arrow{color:var(--blue);font-weight:900}
+.small{font-size:12px;color:var(--muted)}
+.toc-note{font-size:11px;color:var(--dim)}
+details{border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:8px 11px;margin:10px 0}
+summary{cursor:pointer;font-weight:700}
+.footer{margin-top:32px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:11px}
+ul{padding-left:20px}
+li{margin:4px 0;color:#d5e1ed}
+@media(max-width:950px){.layout{grid-template-columns:1fr}.nav{position:relative;top:0;max-height:none}.grid2,.grid3{grid-template-columns:1fr}.wrap{padding:14px}h1{font-size:28px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="hero" id="top">
+  <div class="eyebrow">FLEETAVAIL · CODEBASE + CONCEPTS + END-TO-END LEARNING GUIDE</div>
+  <h1>FleetAvail: understand the whole system from first principles</h1>
+  <p class="lead">
+    This guide walks through the repository in the order the system actually works:
+    what problem it solves, what every important term means, what each folder/file does,
+    how telemetry becomes model outputs, how those outputs become maintenance decisions,
+    how spare constraints change the decision, and how the final fleet availability number is produced.
+  </p>
+  <div class="badges">
+    <span class="badge green">FD001 REFERENCE SCOPE</span>
+    <span class="badge blue">FASTAPI + PYTHON + REACT/VITE</span>
+    <span class="badge blue">RUL + FAILURE RISK + ANOMALY</span>
+    <span class="badge blue">DIGITAL TWIN + DECISION ENGINE</span>
+    <span class="badge amber">PROTOTYPE · NOT CERTIFIED AVIATION SOFTWARE</span>
+  </div>
+</header>
+
+<div class="layout">
+<aside class="nav">
+  <strong>Guide contents</strong>
+  <a href="#1">1. The problem in plain language</a>
+  <a href="#2">2. Core vocabulary</a>
+  <a href="#3">3. Mental model of the repo</a>
+  <a href="#4">4. Entire end-to-end flow</a>
+  <a href="#5">5. Repository map</a>
+  <a href="#6">6. Backend / API</a>
+  <a href="#7">7. C-MAPSS data pipeline</a>
+  <a href="#8">8. Feature engineering</a>
+  <a href="#9">9. Sequence windows</a>
+  <a href="#10">10. RUL models</a>
+  <a href="#11">11. Failure-risk model</a>
+  <a href="#12">12. Anomaly model</a>
+  <a href="#13">13. Runtime adapter</a>
+  <a href="#14">14. Health Fusion</a>
+  <a href="#15">15. Digital Twin</a>
+  <a href="#16">16. Maintenance optimizer</a>
+  <a href="#17">17. Spare allocation</a>
+  <a href="#18">18. Fleet availability</a>
+  <a href="#19">19. Observability / MLOps</a>
+  <a href="#20">20. WebSocket + simulator</a>
+  <a href="#21">21. Frontend</a>
+  <a href="#22">22. Training scripts</a>
+  <a href="#23">23. Tests and CI</a>
+  <a href="#24">24. One aircraft walkthrough</a>
+  <a href="#25">25. Cold start vs ready window</a>
+  <a href="#26">26. Model artifacts</a>
+  <a href="#27">27. How to read/change the code</a>
+  <a href="#28">28. Glossary</a>
+  <a href="#29">29. Current state + open validation</a>
+</aside>
+
+<main class="content">
+
+<section id="1">
+<h2>1. The problem FleetAvail is solving</h2>
+<div class="card blue">
+<p><strong>FleetAvail is a predictive-maintenance and fleet-readiness decision system.</strong></p>
+<p>
+The central question is not merely “will this engine fail?” It is:
+<strong>“Given the current condition of every aircraft, when should we maintain them, do we have the parts, and how will those decisions affect the number of aircraft available?”</strong>
+</p>
+</div>
+
+<p>A traditional monitoring screen gives measurements. FleetAvail tries to turn measurements into an operational chain:</p>
+<div class="flow">
+  <span class="node">Telemetry</span><span class="arrow">→</span>
+  <span class="node">Preprocessing</span><span class="arrow">→</span>
+  <span class="node">RUL</span><span class="arrow">+</span>
+  <span class="node">Failure Risk</span><span class="arrow">+</span>
+  <span class="node">Anomaly</span><span class="arrow">→</span>
+  <span class="node">Health State</span><span class="arrow">→</span>
+  <span class="node">Digital Twin</span><span class="arrow">→</span>
+  <span class="node">Maintenance</span><span class="arrow">→</span>
+  <span class="node">Spares</span><span class="arrow">→</span>
+  <span class="node">Fleet Availability</span>
+</div>
+
+<p><strong>Why this matters:</strong> a prediction is useful only when it changes a decision. FleetAvail is designed to connect machine-learning outputs to operational decisions instead of stopping at a model score.</p>
+</section>
+
+<section id="2">
+<h2>2. Core vocabulary — the words you will see everywhere</h2>
+<table>
+<thead><tr><th>Term</th><th>Meaning</th><th>What FleetAvail does with it</th></tr></thead>
+<tbody>
+<tr><td><strong>Aircraft / unit</strong></td><td>One asset being monitored. In C-MAPSS this is represented by <code>unit_id</code>; inside the application it becomes IDs such as <code>AF-003</code>.</td><td>Keeps predictions, history, twin state and maintenance decisions separate per aircraft.</td></tr>
+<tr><td><strong>Component</strong></td><td>A subsystem of an aircraft.</td><td>Tracks ENGINE, HYDRAULIC, ELECTRICAL and LANDING_GEAR. ML/C-MAPSS inference is currently applied to ENGINE.</td></tr>
+<tr><td><strong>Telemetry</strong></td><td>Measurements captured from a system over time.</td><td>Accepts 3 C-MAPSS operating settings plus 21 sensor channels; also accepts a few legacy aliases for demo inputs.</td></tr>
+<tr><td><strong>Cycle</strong></td><td>A time/order index in C-MAPSS rather than a wall-clock timestamp.</td><td>Orders the sequence and prevents time moving backwards.</td></tr>
+<tr><td><strong>RUL</strong></td><td><em>Remaining Useful Life</em>: estimated number of cycles remaining before the failure endpoint.</td><td>Used as an urgency signal in health fusion, maintenance ranking and fleet planning.</td></tr>
+<tr><td><strong>Failure probability</strong></td><td>Probability that the failure-risk condition will occur within a chosen horizon (default 30 cycles).</td><td>Produced by XGBoost and then calibrated; used heavily in health and maintenance decisions.</td></tr>
+<tr><td><strong>Anomaly score</strong></td><td>How unusual the current behavior is relative to a normal-operation reference.</td><td>Produced by Isolation Forest; higher is more anomalous.</td></tr>
+<tr><td><strong>Health score</strong></td><td>A combined operational health measure.</td><td>The runtime forms a normalized health signal; the formal Health Fusion converts inputs to a 0–100 score.</td></tr>
+<tr><td><strong>Confidence</strong></td><td>An estimate of how trustworthy the current prediction context is.</td><td>Reduced during cold-start and when signals are degraded.</td></tr>
+<tr><td><strong>Data quality</strong></td><td>How complete/valid the incoming telemetry is.</td><td>Missing/invalid fields reduce the quality score and are exposed in the API.</td></tr>
+<tr><td><strong>Health Fusion</strong></td><td>Rule-based combination of several model/quality signals into one operational state.</td><td>Outputs NORMAL, WATCH, DEGRADED or CRITICAL plus reason codes.</td></tr>
+<tr><td><strong>Digital Twin</strong></td><td>A software representation of an asset's current state and history.</td><td>Persists component state and prediction/maintenance events in JSON. This is a state/ledger twin, not a 3D aircraft model.</td></tr>
+<tr><td><strong>Maintenance optimizer</strong></td><td>Logic that decides which work should happen first while obeying constraints.</td><td>Uses risk, RUL, mission priority, maintenance duration, spare availability and daily capacity.</td></tr>
+<tr><td><strong>Spare allocation</strong></td><td>Assignment of limited replacement parts to requests.</td><td>Never allocates more than stock or incompatible stock.</td></tr>
+<tr><td><strong>Fleet availability</strong></td><td>Fraction of aircraft currently or projected to be operational.</td><td>Combines current state, feasible maintenance and spare availability.</td></tr>
+<tr><td><strong>Model artifact</strong></td><td>A saved trained model plus metadata/scaler files needed to reproduce inference.</td><td>Loaded from <code>models/cmapss</code> at runtime. Large artifacts are intentionally not committed.</td></tr>
+<tr><td><strong>Cold start</strong></td><td>The period before enough sequential samples exist to fill the required model window.</td><td>At fewer than 30 samples the runtime reports COLD_START instead of pretending a full sequence prediction exists.</td></tr>
+<tr><td><strong>Window</strong></td><td>A fixed number of consecutive observations fed to a temporal model.</td><td>The default/required runtime window is 30 cycles.</td></tr>
+<tr><td><strong>Preprocessing</strong></td><td>Cleaning and transforming raw inputs into model-ready data.</td><td>Sorts, imputes, removes constant features, adds temporal features and scales data.</td></tr>
+<tr><td><strong>Data leakage</strong></td><td>Accidentally allowing information from validation/test data to influence training.</td><td>Actively avoided through train-only scaling, engine-aware splits and engine-safe windows.</td></tr>
+<tr><td><strong>Calibration</strong></td><td>Mapping a raw model score/probability into a more trustworthy probability estimate.</td><td>Failure risk uses a held-out logistic sigmoid/Platt calibrator.</td></tr>
+<tr><td><strong>Observability</strong></td><td>Information that tells you what the running system is doing and how healthy it is.</td><td>Tracks latency, statuses, quality, provenance, audit records, drift and local explanations.</td></tr>
+</tbody>
+</table>
+</section>
+
+<section id="3">
+<h2>3. The mental model of the codebase</h2>
+<p>Think of the repo as five layers:</p>
+<div class="grid3">
+<div class="kpi"><div class="k">Layer 1</div><div class="n">Data + ML</div><div class="small">C-MAPSS loading, features, sequences, RUL, risk and anomaly.</div></div>
+<div class="kpi"><div class="k">Layer 2</div><div class="n">Runtime</div><div class="small">Turns incoming API telemetry into model inputs and safely handles cold-start/fallback behavior.</div></div>
+<div class="kpi"><div class="k">Layer 3</div><div class="n">State</div><div class="small">Health Fusion + Digital Twin turn model outputs into operational asset state.</div></div>
+</div>
+<div class="grid2">
+<div class="kpi"><div class="k">Layer 4</div><div class="n">Decision</div><div class="small">Maintenance plan → spare allocation → projected availability.</div></div>
+<div class="kpi"><div class="k">Layer 5</div><div class="n">Interface</div><div class="small">FastAPI REST/WebSocket + React/Vite dashboard + tests/CI.</div></div>
+</div>
+
+<div class="card amber">
+<p><strong>Important architectural rule:</strong> the API layer does not directly know how to call XGBoost, TensorFlow or Isolation Forest. <code>CMapssModelRuntime</code> sits between FastAPI and model artifacts.</p>
+</div>
+</section>
+
+<section id="4">
+<h2>4. Entire end-to-end flow</h2>
+<pre>Incoming telemetry
+      │
+      ▼
+FastAPI request / WebSocket event
+      │
+      ▼
+FleetService.predict()
+      │
+      ▼
+CMapssModelRuntime
+      ├── validate / measure input quality
+      ├── normalize telemetry into C-MAPSS shape
+      ├── append to aircraft+component rolling history
+      ├── if history < 30 → COLD_START
+      └── if history >= 30:
+             ├── clean
+             ├── build temporal features
+             ├── apply training-time scaler
+             ├── RUL model
+             ├── XGBoost failure probability
+             └── Isolation Forest anomaly
+      │
+      ▼
+FleetService writes model signals into aircraft state
+      │
+      ▼
+Health Fusion
+      ├── 0–100 health score
+      ├── NORMAL / WATCH / DEGRADED / CRITICAL
+      └── reason codes
+      │
+      ▼
+Digital Twin
+      ├── component state
+      ├── last cycle
+      ├── lifecycle state
+      └── PREDICTION_UPDATE event
+      │
+      ▼
+Maintenance Candidate Generation
+      │
+      ▼
+Constraint-aware Maintenance Plan
+      │
+      ▼
+Spare Allocation
+      │
+      ▼
+Fleet Availability Projection
+      │
+      ▼
+REST / dashboard / WebSocket consumers</pre>
+
+<p>That is the single most important diagram in the project. Every folder exists to implement one part of this chain or to test it.</p>
+</section>
+
+<section id="5">
+<h2>5. Repository map — what lives where</h2>
+<table>
+<thead><tr><th>Path</th><th>Purpose</th><th>Start here when you want to learn…</th></tr></thead>
+<tbody>
+<tr><td><code>backend/app/main.py</code></td><td>FastAPI application, request models and HTTP/WebSocket routes.</td><td>How the application is exposed to the outside world.</td></tr>
+<tr><td><code>backend/app/services/core.py</code></td><td>Main orchestration service. Connects runtime, health, twin, maintenance, spares and availability.</td><td>How the whole business flow is wired together.</td></tr>
+<tr><td><code>ml/cmapss/data.py</code></td><td>Reads C-MAPSS and generates RUL labels.</td><td>How raw dataset rows become labeled data.</td></tr>
+<tr><td><code>ml/cmapss/features.py</code></td><td>Cleaning, constant-feature removal, temporal features and scaling.</td><td>How raw measurements become model features.</td></tr>
+<tr><td><code>ml/cmapss/sequences.py</code></td><td>Creates fixed-length windows.</td><td>How time-series samples are built.</td></tr>
+<tr><td><code>ml/cmapss/model.py</code></td><td>CPU-friendly HistGradientBoosting RUL baseline.</td><td>The simplest RUL model in the repo.</td></tr>
+<tr><td><code>ml/cmapss/temporal_rul.py</code></td><td>LSTM/TCN RUL builders and training utilities.</td><td>How deep temporal models differ from the baseline.</td></tr>
+<tr><td><code>ml/cmapss/failure_risk.py</code></td><td>XGBoost classifier + held-out probability calibration.</td><td>Failure-risk modeling.</td></tr>
+<tr><td><code>ml/cmapss/anomaly.py</code></td><td>Isolation Forest anomaly detector + thresholding.</td><td>Unsupervised anomaly detection.</td></tr>
+<tr><td><code>ml/cmapss/runtime.py</code></td><td>Production-facing adapter that loads artifacts and runs inference.</td><td>Exactly what happens when a live prediction arrives.</td></tr>
+<tr><td><code>ml/health.py</code></td><td>Formal deterministic HealthState and classification thresholds.</td><td>How multiple signals become one operational state.</td></tr>
+<tr><td><code>ml/sequence_buffer.py</code></td><td>Reusable bounded telemetry buffer utility.</td><td>Correct handling of per-aircraft temporal history.</td></tr>
+<tr><td><code>ml/observability.py</code></td><td>Quality, explanation, drift, audit and latency tracking.</td><td>What the service knows about its own inference behavior.</td></tr>
+<tr><td><code>digital_twin/state.py</code></td><td>Aircraft/component state and atomic JSON persistence.</td><td>How predictions persist after they are made.</td></tr>
+<tr><td><code>decision_engine/maintenance_optimizer.py</code></td><td>Ranks and schedules maintenance under capacity constraints.</td><td>How risk becomes a maintenance plan.</td></tr>
+<tr><td><code>decision_engine/spares.py</code></td><td>Allocates limited parts to requests.</td><td>How inventory changes feasibility.</td></tr>
+<tr><td><code>decision_engine/fleet_availability.py</code></td><td>Computes current/projected available aircraft.</td><td>How the final fleet-readiness number is calculated.</td></tr>
+<tr><td><code>simulator/telemetry.py</code></td><td>Small deterministic telemetry generator for the original demo contract.</td><td>How synthetic engine measurements are produced.</td></tr>
+<tr><td><code>scripts/</code></td><td>Dataset preparation, model training/prediction, smoke testing and demo-data generation.</td><td>How to execute the pipeline from the command line.</td></tr>
+<tr><td><code>tests/</code></td><td>Unit, integration, API and phase-level regression tests.</td><td>What behavior is considered correct.</td></tr>
+<tr><td><code>frontend/</code></td><td>React/Vite dashboard.</td><td>How the operator sees the system.</td></tr>
+<tr><td><code>docs/</code></td><td>Architecture, C-MAPSS, phase and setup documentation.</td><td>Design intent and project milestones.</td></tr>
+<tr><td><code>.github/workflows/</code></td><td>GitHub Actions validation.</td><td>What CI checks automatically.</td></tr>
+<tr><td><code>models/</code></td><td>Saved model artifacts location; large files are gitignored.</td><td>Where trained weights live locally.</td></tr>
+</tbody>
+</table>
+</section>
+
+<section id="6">
+<h2>6. Backend and API — the entry point into the application</h2>
+<h3><code>backend/app/main.py</code></h3>
+<p><strong>FastAPI</strong> is the Python web framework used to expose functions as HTTP endpoints. An endpoint is simply a URL + HTTP method mapped to Python code.</p>
+<table>
+<thead><tr><th>Route</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>GET /</code></td><td>Dashboard entry point.</td></tr>
+<tr><td><code>GET /health</code></td><td>Service health, model mode and decision-layer status.</td></tr>
+<tr><td><code>GET /api/models</code></td><td>Shows which model branches are loaded and which RUL model is selected.</td></tr>
+<tr><td><code>GET /api/observability</code></td><td>Inference counters and latency summary.</td></tr>
+<tr><td><code>GET /api/audit</code></td><td>Recent prediction audit records.</td></tr>
+<tr><td><code>GET /api/fleet/summary</code></td><td>Fleet totals and availability.</td></tr>
+<tr><td><code>GET /api/fleet/availability</code></td><td>Current/projected availability details.</td></tr>
+<tr><td><code>GET /api/fleet/aircraft</code></td><td>List every aircraft and its engine state.</td></tr>
+<tr><td><code>GET /api/fleet/aircraft/{id}</code></td><td>Detailed aircraft + component state + twin.</td></tr>
+<tr><td><code>GET /api/fleet/aircraft/{id}/twin</code></td><td>Persistent twin snapshot.</td></tr>
+<tr><td><code>POST /api/fleet/aircraft/{id}/maintenance</code></td><td>Execute a maintenance event.</td></tr>
+<tr><td><code>POST /api/predict</code></td><td>Submit telemetry and get model + fused health output.</td></tr>
+<tr><td><code>POST /api/simulate/what-if</code></td><td>Evaluate a hypothetical degradation scenario.</td></tr>
+<tr><td><code>POST /api/maintenance/recommend</code></td><td>Get the top recommendation for an aircraft.</td></tr>
+<tr><td><code>POST /api/maintenance/plan</code></td><td>Build the fleet maintenance plan.</td></tr>
+<tr><td><code>GET /api/spares</code></td><td>Current spare inventory.</td></tr>
+<tr><td><code>POST /api/spares/allocate</code></td><td>Allocate inventory against planned maintenance requests.</td></tr>
+<tr><td><code>POST /api/fleet/availability</code></td><td>Project availability using planning options.</td></tr>
+<tr><td><code>WS /ws/telemetry</code></td><td>Continuous telemetry/inference events for the dashboard.</td></tr>
+</tbody>
+</table>
+
+<h3>Why Pydantic models are used</h3>
+<p>Classes such as <code>PredictionRequest</code>, <code>WhatIf</code>, <code>MaintenanceExecution</code> and <code>PlanningOptions</code> define the input shape. Pydantic validates types and constraints before business logic receives the request.</p>
+
+<h3><code>backend/app/services/core.py</code> is the orchestrator</h3>
+<p>This is the most important application file. It creates the 12-aircraft demo fleet, loads model runtime state, loads C-MAPSS replay data when available, and exposes methods that coordinate the rest of the repository.</p>
+
+<p>The <code>FleetService</code> object owns:</p>
+<ul>
+<li><code>aircraft</code>: in-memory aircraft/component state.</li>
+<li><code>twin_store</code>: persistent digital-twin storage.</li>
+<li><code>runtime</code>: C-MAPSS ML runtime.</li>
+<li><code>observability</code>: metrics/audit/drift/explanation state.</li>
+<li><code>spares_data</code>: current demo inventory.</li>
+<li>replay and live-signal state for the WebSocket path.</li>
+</ul>
+
+<div class="card blue">
+<p><strong>Reading trick:</strong> read <code>main.py</code> first to see the public routes, then <code>core.py</code> to see what each route actually triggers.</p>
+</div>
+</section>
+
+<section id="7">
+<h2>7. C-MAPSS data pipeline</h2>
+<p><strong>C-MAPSS</strong> is NASA's turbofan engine degradation benchmark used here as the controlled reference dataset. The project currently focuses on <strong>FD001</strong>.</p>
+
+<h3>Expected files</h3>
+<pre>data/raw/cmapss/FD001/
+├── train.txt
+├── test.txt
+└── RUL_test.txt</pre>
+
+<h3>What the raw row contains</h3>
+<p><code>ml/cmapss/data.py</code> assigns these names:</p>
+<pre>unit_id
+cycle
+op_setting_1
+op_setting_2
+op_setting_3
+sensor_1 ... sensor_21</pre>
+
+<p>That is <strong>26 columns</strong>: 2 identifiers/time columns + 3 operating settings + 21 sensors.</p>
+
+<h3>How training RUL is generated</h3>
+<p>For a training engine, the last observed cycle is treated as the failure endpoint:</p>
+<pre>RUL(row) = maximum_cycle_for_that_engine - current_cycle</pre>
+
+<h3>How test RUL is generated</h3>
+<p>The test trajectory does not itself contain the full failure endpoint, so the code uses the official <code>RUL_test.txt</code> terminal-life value for each engine:</p>
+<pre>test_RUL(row) = official_terminal_RUL + last_test_cycle - current_cycle</pre>
+
+<div class="card green">
+<p><strong>Why this is important:</strong> the target is constructed from the correct source for each split, instead of leaking a future test trajectory endpoint into training.</p>
+</div>
+
+<h3>Leakage-safe principles implemented</h3>
+<ul>
+<li>Training scalers are fitted only on training data.</li>
+<li>Temporal features are calculated independently inside each engine.</li>
+<li>Sequence windows never cross engine boundaries.</li>
+<li>Failure-risk model splitting is engine-aware, not random-row splitting.</li>
+<li>Test evaluation uses held-out engine trajectories.</li>
+<li>The RUL target is capped at 125 cycles during model fitting.</li>
+</ul>
+</section>
+
+<section id="8">
+<h2>8. Feature engineering — making measurements useful for models</h2>
+<p><code>ml/cmapss/features.py</code> turns raw columns into a richer representation.</p>
+
+<h3>Step 1 — clean</h3>
+<p><code>clean()</code>:</p>
+<ul>
+<li>sorts by <code>unit_id</code> and <code>cycle</code></li>
+<li>replaces infinite values with missing values</li>
+<li>fills sensor missing values using each engine's sensor median</li>
+<li>uses a global median fallback if an engine's sensor median is unavailable</li>
+</ul>
+
+<h3>Step 2 — remove constant features</h3>
+<p>A constant feature never changes. It contains no variation and therefore provides little predictive information in this pipeline. <code>drop_constant_features()</code> learns the keep-list from training data and applies the same columns to test data.</p>
+
+<h3>Step 3 — temporal features</h3>
+<p>For each base feature the code creates:</p>
+<table><thead><tr><th>Feature type</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>feature_delta</code></td><td>Current value minus previous cycle value.</td></tr>
+<tr><td><code>feature_ma5</code></td><td>5-cycle rolling mean.</td></tr>
+<tr><td><code>feature_ma10</code></td><td>10-cycle rolling mean.</td></tr>
+<tr><td><code>feature_ma20</code></td><td>20-cycle rolling mean.</td></tr>
+</tbody></table>
+
+<p><strong>Why?</strong> A raw value tells you “where the system is.” A delta/rolling mean begins to tell you “how it is changing.” Degradation is fundamentally a time-dependent phenomenon.</p>
+
+<h3>Step 4 — scaling</h3>
+<p><strong>StandardScaler</strong> transforms each feature so the training distribution is centered/scaled. The scaler is fitted once on training features and later reused during prediction.</p>
+
+<div class="card amber">
+<p><strong>Key concept: the scaler is part of the model pipeline.</strong> A trained model expecting standardized inputs cannot be safely fed arbitrary raw values. That is why model metadata stores the feature columns and scaler reference.</p>
+</div>
+</section>
+
+<section id="9">
+<h2>9. Sequence windows — why “30 cycles” is a big deal</h2>
+<p>A time-series model should see a <strong>sequence</strong>, not just one isolated row.</p>
+
+<p>With a 30-cycle window:</p>
+<pre>[cycle 1 ... cycle 30] → one training example
+[cycle 2 ... cycle 31] → next training example
+[cycle 3 ... cycle 32] → next training example</pre>
+
+<p><code>ml/cmapss/sequences.py</code> creates those overlapping windows. It groups by engine first, so the last 10 cycles of engine 1 are never accidentally joined with the first 20 cycles of engine 2.</p>
+
+<h3>What the shapes mean</h3>
+<p>A temporal input is conceptually:</p>
+<pre>[samples, cycles, features]</pre>
+<p>For example, one inference window is:</p>
+<pre>[30 cycles, N engineered features]</pre>
+
+<p>The reusable <code>TelemetrySequenceBuffer</code> in <code>ml/sequence_buffer.py</code> provides a strict bounded-history abstraction. The current model runtime also maintains its own <code>deque(maxlen=30)</code> per <code>(aircraft_id, component)</code>.</p>
+</section>
+
+<section id="10">
+<h2>10. RUL models — the “how long do we have?” branch</h2>
+
+<h3>10.1 HistGradientBoosting baseline</h3>
+<p><code>ml/cmapss/model.py</code> uses <strong>HistGradientBoostingRegressor</strong>. It is a tree-based regression model that is fast enough to run comfortably on a typical student laptop.</p>
+
+<p>Instead of passing the entire 30×N sequence directly, the baseline summarizes the window into four statistics for every feature:</p>
+<pre>last state
+mean over window
+standard deviation over window
+start-to-end delta</pre>
+
+<p>So the model is still using temporal information, but in compressed form.</p>
+
+<h3>10.2 LSTM</h3>
+<p><strong>LSTM</strong> means Long Short-Term Memory. It is a recurrent neural-network architecture designed to carry useful information through a sequence.</p>
+<p>The implementation builds:</p>
+<pre>30-cycle sequence
+   ↓
+LSTM(96, return_sequences=True)
+   ↓
+LSTM(48)
+   ↓
+Dense(32, ReLU)
+   ↓
+Dropout
+   ↓
+Dense(1)
+   ↓
+RUL</pre>
+
+<h3>10.3 TCN</h3>
+<p><strong>TCN</strong> means Temporal Convolutional Network. Instead of recurrence, it uses causal 1D convolutions with dilation rates.</p>
+<pre>dilation 1 → 2 → 4 → 8
+       ↓
+causal temporal convolutions
+       ↓
+global pooling
+       ↓
+dense layers
+       ↓
+RUL</pre>
+
+<h3>Training details</h3>
+<p>The temporal models use TensorFlow/Keras. The training helper compiles with Adam and Huber loss, uses early stopping and reduces the learning rate when validation loss stops improving.</p>
+
+<h3>Current FD001 benchmark recorded by the repo</h3>
+<table><thead><tr><th>Model</th><th>MAE</th><th>RMSE</th></tr></thead><tbody>
+<tr><td>HistGradientBoosting</td><td>30.83</td><td>45.10</td></tr>
+<tr><td>LSTM</td><td>32.45</td><td>46.29</td></tr>
+<tr><td>TCN</td><td>33.54</td><td>47.39</td></tr>
+</tbody></table>
+
+<p><strong>MAE</strong> is average absolute error. <strong>RMSE</strong> penalizes larger errors more strongly. For the current recorded comparison, the baseline has the lowest test MAE.</p>
+
+<div class="card blue">
+<p>In the current <code>CMapssModelRuntime</code>, <code>FLEETAVAIL_RUL_MODEL=auto</code> selects the available RUL branch with the lowest validated test MAE when comparison metadata exists. Explicit values <code>baseline</code>, <code>lstm</code> and <code>tcn</code> are also supported.</p>
+</div>
+</section>
+
+<section id="11">
+<h2>11. Failure-risk model — the “could it fail soon?” branch</h2>
+<p><code>ml/cmapss/failure_risk.py</code> treats failure prediction as a <strong>binary classification</strong> problem.</p>
+
+<h3>The label</h3>
+<p>For the default horizon of 30 cycles:</p>
+<pre>RUL <= 30 → failure_within_horizon = 1
+RUL >  30 → failure_within_horizon = 0</pre>
+
+<p>This is different from RUL. RUL asks <em>how much time remains?</em>; the classifier asks <em>are we inside the chosen failure-risk horizon?</em></p>
+
+<h3>Why engine-aware splitting?</h3>
+<p>The same engine produces many rows. Random row splitting could put cycle 10 of an engine in training and cycle 100 of that same engine in test. That is too easy a test because the model has effectively seen the same physical trajectory.</p>
+
+<p><code>engine_aware_split()</code> uses <strong>GroupShuffleSplit</strong> so complete engine trajectories are separated into training, calibration and holdout sets.</p>
+
+<h3>Why XGBoost?</h3>
+<p><strong>XGBoost</strong> is gradient-boosted decision trees. It is strong on structured/tabular data, handles nonlinear feature relationships and is relatively practical for this pipeline.</p>
+
+<h3>Why probability calibration?</h3>
+<p>The raw classifier probability is not automatically a perfectly trustworthy probability. FleetAvail therefore takes the held-out calibration-set probabilities, converts them to logits, and fits a <strong>logistic sigmoid / Platt calibrator</strong>.</p>
+
+<pre>features
+  ↓
+XGBoost raw probability
+  ↓
+logit(raw probability)
+  ↓
+held-out LogisticRegression calibrator
+  ↓
+calibrated failure probability</pre>
+
+<p>The model also handles class imbalance with <code>scale_pos_weight = negatives / positives</code>.</p>
+</section>
+
+<section id="12">
+<h2>12. Anomaly model — the “does this look unusual?” branch</h2>
+<p><code>ml/cmapss/anomaly.py</code> uses <strong>Isolation Forest</strong>, an unsupervised anomaly-detection algorithm.</p>
+
+<h3>Why “unsupervised”?</h3>
+<p>The training path does not require a detailed anomaly label for every row. It learns what normal-ish operating behavior looks like and asks whether new behavior is isolated from that reference population.</p>
+
+<h3>Reference population</h3>
+<p>The current training script selects rows with:</p>
+<pre>RUL >= 125
+or, if necessary, the highest-RUL portion of the training data</pre>
+
+<p>This is an approximation of a healthy reference population for this first prototype.</p>
+
+<h3>Score direction</h3>
+<p>Scikit-learn's raw <code>score_samples</code> is higher for more normal observations. FleetAvail negates it so the internal contract is easier to read: <strong>higher = more anomalous</strong>.</p>
+
+<h3>Threshold</h3>
+<p>The default calibrated threshold is the 99th percentile of normal-reference anomaly scores. The idea is to keep the false-positive reference region tight while still flagging unusual behavior.</p>
+</section>
+
+<section id="13">
+<h2>13. The runtime adapter — where ML becomes a live service</h2>
+<p><code>ml/cmapss/runtime.py</code> is the bridge between HTTP telemetry and trained artifacts.</p>
+
+<h3>What it owns</h3>
+<ul>
+<li>normalizing incoming telemetry into 21-sensor C-MAPSS structure</li>
+<li>per-aircraft/component rolling history</li>
+<li>30-cycle window enforcement</li>
+<li>loading RUL/failure/anomaly artifacts</li>
+<li>loading metadata and scalers</li>
+<li>running the model branches</li>
+<li>reporting cold-start/degraded-data state</li>
+<li>reporting model selection and load errors</li>
+</ul>
+
+<h3>Telemetry aliases</h3>
+<p>The current API also accepts:</p>
+<pre>egt_c            → sensor_2
+vibration_g      → sensor_3
+oil_pressure_kpa → sensor_4</pre>
+
+<p>This lets the original lightweight demo telemetry contract coexist with C-MAPSS-style inputs.</p>
+
+<h3>Model loading</h3>
+<p>The expected artifacts are conceptually:</p>
+<pre>models/cmapss/
+├── fd001_rul.joblib
+├── fd001_rul.json
+├── fd001_failure.joblib
+├── fd001_failure.json
+├── fd001_isolation_forest.joblib
+├── fd001_isolation_forest.json
+├── fd001_lstm_rul.keras
+├── fd001_lstm_rul.json
+├── fd001_tcn_rul.keras
+├── fd001_tcn_rul.json
+└── fd001_temporal_rul_comparison.json</pre>
+
+<p>Not every file must be present. The runtime is deliberately resilient:</p>
+<pre>trained temporal RUL available?
+    YES → load selected temporal model
+    NO  → try baseline RUL
+
+failure artifact available?
+    YES → enable failure branch
+    NO  → mark unavailable
+
+anomaly artifact available?
+    YES → enable anomaly branch
+    NO  → mark unavailable</pre>
+
+<h3>The most important output field</h3>
+<p><code>window_ready</code> tells consumers whether a full sequence exists. This avoids silently treating one sample as if it were a 30-cycle temporal prediction.</p>
+</section>
+
+<section id="14">
+<h2>14. Health Fusion — turning separate signals into one operational state</h2>
+<p><code>ml/health.py</code> is intentionally independent of the ML model implementation. It accepts already-computed health, anomaly, risk, RUL, confidence and data quality.</p>
+
+<h3>Formal score</h3>
+<p>The final 0–100 score is:</p>
+<pre>health_score =
+  100 × [ 0.50 × health
+        + 0.25 × (1 - anomaly)
+        + 0.25 × data_quality ]</pre>
+
+<p>Notice what is <strong>not</strong> directly inside this weighted score: failure probability and RUL. Those are primarily used for classification/urgency and reason codes. This separation is important when reading the code.</p>
+
+<h3>Operational levels</h3>
+<table><thead><tr><th>Level</th><th>Trigger examples</th></tr></thead><tbody>
+<tr><td><strong>CRITICAL</strong></td><td>failure risk ≥ 0.85, or RUL ≤ 20, or anomaly ≥ 0.90, or health score &lt; 35.</td></tr>
+<tr><td><strong>DEGRADED</strong></td><td>failure risk ≥ 0.60, or RUL ≤ 45, or anomaly ≥ 0.70, or health score &lt; 55.</td></tr>
+<tr><td><strong>WATCH</strong></td><td>failure risk ≥ 0.30, or RUL ≤ 90, or anomaly ≥ 0.45, or health score &lt; 75.</td></tr>
+<tr><td><strong>NORMAL</strong></td><td>None of the above triggers.</td></tr>
+</tbody></table>
+
+<p>Extra reason codes are appended when data quality &lt; 0.80 or confidence &lt; 0.60.</p>
+
+<div class="card green">
+<p><strong>Why reason codes?</strong> A human operator needs more than “DEGRADED.” Codes such as <code>ELEVATED_FAILURE_RISK</code>, <code>SHORT_RUL</code> and <code>HIGH_ANOMALY</code> tell the operator why the state changed.</p>
+</div>
+</section>
+
+<section id="15">
+<h2>15. Digital Twin — persistent memory of the aircraft</h2>
+<p><code>digital_twin/state.py</code> is the state ledger for each aircraft.</p>
+
+<h3>What the twin contains</h3>
+<pre>AircraftTwin
+├── aircraft_id
+├── mission_status
+├── location
+├── components
+│   ├── ENGINE
+│   ├── HYDRAULIC
+│   ├── ELECTRICAL
+│   └── LANDING_GEAR
+├── events[]
+└── maintenance_due</pre>
+
+<p>Each <code>ComponentState</code> stores health, degradation, RUL, failure probability, anomaly score, confidence, data quality, lifecycle status and last update cycle.</p>
+
+<h3>Prediction event</h3>
+<p>Every successful prediction can create a <code>PREDICTION_UPDATE</code> event. Maintenance creates a <code>MAINTENANCE</code> event.</p>
+
+<h3>Why persistence?</h3>
+<p>Without a persistent twin, a prediction exists only as a response. With a twin, the application has memory of the asset state, so later decisions can reference what happened before.</p>
+
+<h3>Why atomic JSON?</h3>
+<p>The prototype wants to run without PostgreSQL or Redis. The store writes to a temporary file, flushes/syncs it, and atomically replaces the destination. This reduces the chance of leaving a half-written state file.</p>
+
+<p>The current file is <code>data/digital_twin_state.json</code> and is intentionally ignored by Git because it is runtime state rather than source code.</p>
+
+<div class="card amber">
+<p><strong>Terminology note:</strong> this is a digital twin in the state/operational sense. It is not currently a 3D geometry model, physics simulator, or CFD replica.</p>
+</div>
+</section>
+
+<section id="16">
+<h2>16. Maintenance optimizer — turning risk into work</h2>
+<p><code>decision_engine/maintenance_optimizer.py</code> is a deterministic planning layer. It does not train an ML model.</p>
+
+<h3>Inputs per candidate</h3>
+<ul>
+<li>aircraft ID</li>
+<li>component</li>
+<li>mission priority</li>
+<li>failure probability</li>
+<li>RUL</li>
+<li>maintenance duration</li>
+<li>required spare part</li>
+<li>spare availability</li>
+</ul>
+
+<h3>Priority score</h3>
+<pre>risk      = clamp(failure_probability, 0, 1)
+urgency   = 1 / (1 + RUL)
+mission   = clamp(mission_priority, 0.1, 2.0)
+spare_bonus = +0.10 when stock exists, -0.05 otherwise
+
+score = 0.65 × risk
+      + 8.0 × urgency
+      + 0.30 × mission
+      + spare_bonus</pre>
+
+<p>Because <code>urgency = 1/(1+RUL)</code>, smaller RUL means larger urgency.</p>
+
+<h3>Actions</h3>
+<table><thead><tr><th>Action</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>GROUND_AND_MAINTAIN</code></td><td>Very urgent work; schedule immediately when capacity exists.</td></tr>
+<tr><td><code>SCHEDULE_MAINTENANCE</code></td><td>Elevated risk/urgency, but not necessarily immediate grounding.</td></tr>
+<tr><td><code>MONITOR</code></td><td>No immediate maintenance trigger.</td></tr>
+<tr><td><code>ORDER_SPARE_AND_HOLD</code></td><td>Work is constrained because required inventory is unavailable.</td></tr>
+<tr><td><code>DEFER_CAPACITY</code></td><td>Work is urgent enough to want maintenance, but daily capacity is full.</td></tr>
+</tbody></table>
+
+<h3>Capacity constraint</h3>
+<p>The planner tracks daily maintenance hours across a configurable horizon. Default application settings are 7 days and 24 maintenance hours/day.</p>
+</section>
+
+<section id="17">
+<h2>17. Spare allocation — the resource constraint</h2>
+<p><code>decision_engine/spares.py</code> solves a smaller but extremely important problem: <strong>even if maintenance is the right decision, can we physically execute it?</strong></p>
+
+<h3>Current demo inventory</h3>
+<table><thead><tr><th>Part</th><th>Quantity</th><th>Lead time</th><th>Mapped component</th></tr></thead><tbody>
+<tr><td>ENG-FLT</td><td>9</td><td>2 days</td><td>ENGINE</td></tr>
+<tr><td>HYD-PMP</td><td>4</td><td>6 days</td><td>HYDRAULIC</td></tr>
+<tr><td>ELEC-REG</td><td>6</td><td>4 days</td><td>ELECTRICAL</td></tr>
+<tr><td>LG-ACT</td><td>3</td><td>8 days</td><td>LANDING_GEAR</td></tr>
+</tbody></table>
+
+<h3>Allocation logic</h3>
+<p>Requests are ranked so compatible requests come first, then higher priority, then higher delay cost. Available stock is decremented as each request is allocated.</p>
+
+<p>A request can end in:</p>
+<pre>ALLOCATED_FULL
+ALLOCATED_PARTIAL
+WAITLIST_NO_COMPATIBLE_STOCK</pre>
+
+<p><strong>Unmet quantity</strong> is the critical field for the availability layer. A maintenance task that has no compatible part should not magically count as feasible.</p>
+</section>
+
+<section id="18">
+<h2>18. Fleet availability — the final operational number</h2>
+<p><code>decision_engine/fleet_availability.py</code> converts aircraft states and feasible recovery plans into an availability projection.</p>
+
+<h3>Current availability</h3>
+<p>An aircraft counts as currently available when:</p>
+<pre>current_status == READY
+AND
+critical == False</pre>
+
+<h3>Projected recovery</h3>
+<p>A blocked aircraft can be considered recoverable inside the horizon when:</p>
+<pre>spare_available
+AND maintenance_day is inside horizon
+AND maintenance_duration_hours > 0
+AND maintenance_duration_hours <= 24</pre>
+
+<p>The result exposes:</p>
+<ul>
+<li><code>current_available</code></li>
+<li><code>current_availability_pct</code></li>
+<li><code>projected_available</code></li>
+<li><code>projected_availability_pct</code></li>
+<li>current blocked aircraft</li>
+<li>projected blocked aircraft</li>
+<li>recovered aircraft</li>
+</ul>
+
+<div class="card blue">
+<p><strong>Business meaning:</strong> availability is not a direct ML output. It is a <em>decision-layer output</em> calculated after predictions, health, scheduling and spare feasibility have been considered.</p>
+</div>
+</section>
+
+<section id="19">
+<h2>19. Observability, provenance, audit and drift</h2>
+<p><code>ml/observability.py</code> is the project's Phase C operational-hardening layer.</p>
+
+<h3>Input quality</h3>
+<p>The code checks required operating settings and sensors. Missing and invalid fields reduce a normalized quality score.</p>
+
+<h3>Local explanation</h3>
+<p>The explanation method is <code>local_signal_attribution</code>. It compares current sensor values against the recent history and reports the strongest standardized deviations plus decision reasons.</p>
+<p><strong>This is not SHAP and not causal attribution.</strong></p>
+
+<h3>Input drift</h3>
+<p>The system can build a reference mean/std for a history window and flag features whose current value reaches a z-score of 3 or more.</p>
+
+<h3>Prediction drift</h3>
+<p>It also compares recent outputs. Large shifts in failure risk or RUL are flagged as prediction-output drift.</p>
+
+<h3>Audit records</h3>
+<p>Recent predictions store:</p>
+<pre>timestamp
+aircraft/component/cycle
+status
+latency
+telemetry quality
+prediction fields
+provenance
+explanation
+drift
+error (when applicable)</pre>
+
+<p>The in-memory audit deque retains up to 500 records.</p>
+
+<h3>Latency</h3>
+<p>Recent inference latency is used to report last, mean and p95. <strong>p95</strong> means the latency below which approximately 95% of recorded observations fall in the sorted sample used by this implementation.</p>
+</section>
+
+<section id="20">
+<h2>20. WebSocket and telemetry simulation</h2>
+<h3>WebSocket</h3>
+<p><code>/ws/telemetry?aircraft_id=AF-001</code> is an asynchronous stream. The dashboard connects to it and receives an event about once per second.</p>
+
+<p>The backend pins the stream to one aircraft/component rather than mixing multiple aircraft into one plot. Operator-facing health/risk/anomaly values are lightly smoothed with an exponential-style update:</p>
+<pre>smoothed = previous + 0.20 × (current - previous)</pre>
+
+<p>The raw model outputs are also retained in the event so smoothing does not destroy the underlying inference result.</p>
+
+<h3>Telemetry source precedence</h3>
+<p>When FD001 test data exists locally, <code>FleetService</code> can replay actual C-MAPSS test trajectories. When it does not, it generates C-MAPSS-shaped synthetic telemetry.</p>
+
+<h3><code>simulator/telemetry.py</code></h3>
+<p>This small simulator creates demo engine values such as EGT, vibration and oil pressure from a degradation factor. It is useful for understanding the input contract, but it is not the trained NASA model.</p>
+</section>
+
+<section id="21">
+<h2>21. Frontend — how an operator sees the system</h2>
+<p>The frontend lives under <code>frontend/</code> and uses <strong>React</strong>, <strong>Vite</strong>, React Router and Recharts.</p>
+
+<h3>Entry points</h3>
+<pre>frontend/index.html
+    ↓
+frontend/src/main.jsx
+    ↓
+frontend/src/App.jsx
+    ↓
+frontend/src/api.js + styles.css</pre>
+
+<h3>Dashboard routes</h3>
+<table><thead><tr><th>Route</th><th>Purpose</th></tr></thead><tbody>
+<tr><td><code>/</code></td><td>Fleet readiness overview and live telemetry signal.</td></tr>
+<tr><td><code>/fleet</code></td><td>Fleet monitor with ranking/filtering.</td></tr>
+<tr><td><code>/aircraft/:aircraftId</code></td><td>Aircraft detail and subsystem state.</td></tr>
+<tr><td><code>/ml</code></td><td>Model/benchmark information.</td></tr>
+<tr><td><code>/maintenance</code></td><td>Maintenance and spare decisions.</td></tr>
+<tr><td><code>/telemetry</code></td><td>Live WebSocket telemetry.</td></tr>
+</tbody></table>
+
+<h3>How the frontend talks to the backend</h3>
+<p><code>frontend/src/api.js</code> wraps <code>fetch()</code> for GET and POST calls. In development, Vite proxies <code>/api</code>, <code>/health</code> and the telemetry WebSocket to port 8000.</p>
+
+<h3>Why Vite matters</h3>
+<p><strong>Vite</strong> is the frontend development/build tool. React source code is not itself a browser-ready production bundle. <code>npm run build</code> creates <code>frontend/dist</code>.</p>
+
+<div class="card amber">
+<p><strong>Important deployment distinction:</strong> GitHub Pages can host static HTML/JavaScript, but it cannot execute the Python FastAPI service or hold the local model files. The <code>/guide</code> page is therefore a static teaching document. The live prediction API still needs a Python-capable backend.</p>
+</div>
+</section>
+
+<section id="22">
+<h2>22. Training and prediction scripts — the command-line workflow</h2>
+<table><thead><tr><th>Script</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>scripts/train_cmapss.py</code></td><td>Loads C-MAPSS, preprocesses, creates sequences, trains the HGB RUL baseline, evaluates and saves artifact + metadata.</td></tr>
+<tr><td><code>scripts/predict_cmapss.py</code></td><td>Loads a saved RUL model, preprocesses test data the same way and prints terminal predictions.</td></tr>
+<tr><td><code>scripts/train_failure.py</code></td><td>Creates failure labels, performs engine-aware splitting, trains XGBoost + calibration and saves the model.</td></tr>
+<tr><td><code>scripts/predict_failure.py</code></td><td>Evaluates failure risk and prints terminal-engine probabilities.</td></tr>
+<tr><td><code>scripts/train_anomaly.py</code></td><td>Builds the normal reference population, trains Isolation Forest and saves threshold metadata.</td></tr>
+<tr><td><code>scripts/predict_anomaly.py</code></td><td>Scores test data with the saved anomaly model.</td></tr>
+<tr><td><code>scripts/train_temporal_rul.py</code></td><td>Trains LSTM and/or TCN temporal RUL candidates and records comparison metrics.</td></tr>
+<tr><td><code>scripts/predict_temporal_rul.py</code></td><td>Loads a temporal RUL artifact and evaluates/predicts it.</td></tr>
+<tr><td><code>scripts/run_smoke_test.py</code></td><td>Checks the running HTTP service with lightweight endpoint requests.</td></tr>
+<tr><td><code>scripts/generate_demo_data.py</code></td><td>Creates the small demo telemetry data used by the software prototype.</td></tr>
+</tbody></table>
+
+<h3>Recommended command order</h3>
+<pre># 1. install
+pip install -r requirements.txt
+
+# 2. tests
+pytest -q
+
+# 3. compile
+python -m compileall backend decision_engine digital_twin ml scripts
+
+# 4. train baseline
+python scripts/train_cmapss.py --subset FD001 --window 30
+
+# 5. train failure risk
+python scripts/train_failure.py --subset FD001 --horizon 30
+
+# 6. train anomaly detector
+python scripts/train_anomaly.py --subset FD001
+
+# 7. train temporal candidates
+python scripts/train_temporal_rul.py --subset FD001
+
+# 8. start API
+python -m uvicorn backend.app.main:app --reload --port 8000
+
+# 9. inspect loaded branches
+GET /api/models</pre>
+</section>
+
+<section id="23">
+<h2>23. Tests and CI — how correctness is defended</h2>
+<p>The test suite is not one test. It is a stack of increasingly realistic checks.</p>
+
+<table><thead><tr><th>Test file</th><th>Main concern</th></tr></thead><tbody>
+<tr><td><code>tests/test_health.py</code></td><td>Original/basic health behavior.</td></tr>
+<tr><td><code>tests/test_health_fusion.py</code></td><td>Formal HealthState classifications and reason codes.</td></tr>
+<tr><td><code>tests/test_sequence_buffer.py</code></td><td>Bounded windows, validation and cycle ordering.</td></tr>
+<tr><td><code>tests/test_failure.py</code></td><td>Failure-risk labels, splitting, metrics and calibration behavior.</td></tr>
+<tr><td><code>tests/test_anomaly.py</code></td><td>Isolation Forest thresholding and anomaly contract.</td></tr>
+<tr><td><code>tests/test_temporal_rul.py</code></td><td>LSTM/TCN model construction and metrics (subject to TensorFlow availability).</td></tr>
+<tr><td><code>tests/test_model_runtime.py</code></td><td>Runtime loading, selection, cold-start and inference contract.</td></tr>
+<tr><td><code>tests/test_runtime_contract.py</code></td><td>RUL selection and runtime metadata contract.</td></tr>
+<tr><td><code>tests/test_decision_layers.py</code></td><td>Maintenance planning, spares, availability and twin persistence.</td></tr>
+<tr><td><code>tests/test_api_decision_layers.py</code></td><td>Public API for decision layers.</td></tr>
+<tr><td><code>tests/test_phase_b_e2e.py</code></td><td>Business-order end-to-end flow through the API.</td></tr>
+<tr><td><code>tests/test_phase_c.py</code></td><td>Observability, explanations, drift and audit contract.</td></tr>
+</tbody></table>
+
+<h3>CI workflow</h3>
+<p><code>.github/workflows/audit-validation.yml</code> performs:</p>
+<pre>checkout
+  ↓
+Node setup
+  ↓
+npm install + Vite production build
+  ↓
+Python 3.11 setup
+  ↓
+pip install -r requirements.txt
+  ↓
+pytest -q
+  ↓
+start uvicorn
+  ↓
+run API smoke test
+  ↓
+compileall</pre>
+
+<p>This is valuable because the repository is both a Python ML/API project and a frontend application. A green Python test suite alone would not prove the Vite dashboard still builds.</p>
+</section>
+
+<section id="24">
+<h2>24. One aircraft walkthrough — follow AF-003 mentally</h2>
+<div class="card blue">
+<p>Suppose <code>AF-003</code> sends ENGINE telemetry.</p>
+</div>
+
+<h3>Step 1 — request arrives</h3>
+<pre>POST /api/predict
+
+{
+  "aircraft_id": "AF-003",
+  "component": "ENGINE",
+  "telemetry": {...}
+}</pre>
+
+<h3>Step 2 — runtime receives it</h3>
+<p><code>FleetService.predict()</code> checks that the aircraft and component exist, determines the cycle, measures input quality and calls <code>CMapssModelRuntime.predict()</code>.</p>
+
+<h3>Step 3 — the runtime adds the sample</h3>
+<p>The sample is normalized and appended to the <code>(AF-003, ENGINE)</code> history.</p>
+
+<h3>Step 4 — cold start or full window</h3>
+<p>With 1 sample, the runtime returns COLD_START. With 30 samples, it can construct the full model input window.</p>
+
+<h3>Step 5 — model branches run</h3>
+<pre>30-cycle history
+     ├──→ RUL model → RUL cycles
+     ├──→ XGBoost   → failure probability
+     └──→ IF        → anomaly score</pre>
+
+<h3>Step 6 — health is fused</h3>
+<p>The aircraft component state gets the prediction signals. Health Fusion turns them into a deterministic 0–100 score and operational level.</p>
+
+<h3>Step 7 — the twin remembers it</h3>
+<p>The twin gets an updated ENGINE component and a <code>PREDICTION_UPDATE</code> event.</p>
+
+<h3>Step 8 — maintenance uses the state</h3>
+<p>The maintenance planner considers every aircraft/component candidate. AF-003's risk/RUL affects its priority.</p>
+
+<h3>Step 9 — spare feasibility</h3>
+<p>The planner asks for <code>ENG-FLT</code>. If the part is unavailable, the task may become <code>ORDER_SPARE_AND_HOLD</code>.</p>
+
+<h3>Step 10 — fleet availability</h3>
+<p>The availability layer decides how many aircraft are currently ready and how many blocked aircraft can feasibly recover inside the horizon.</p>
+
+<p>That is the “product” of FleetAvail: a sensor observation has eventually become a fleet-level readiness consequence.</p>
+</section>
+
+<section id="25">
+<h2>25. Cold start vs ready window — a concept you must understand</h2>
+<table><thead><tr><th>State</th><th>Meaning</th><th>What FleetAvail does</th></tr></thead><tbody>
+<tr><td><strong>COLD_START</strong></td><td>Fewer than 30 sequential samples.</td><td>Returns no full RUL/risk/anomaly result from the temporal window and exposes sample count/quality.</td></tr>
+<tr><td><strong>READY</strong></td><td>Full 30-cycle sequence exists and data is sufficiently complete.</td><td>Runs the available model branches.</td></tr>
+<tr><td><strong>DEGRADED_DATA</strong></td><td>Inference can run but input quality is below the preferred threshold.</td><td>Returns the prediction with explicit quality metadata.</td></tr>
+<tr><td><strong>ERROR</strong></td><td>Something failed during inference.</td><td>Records the error and returns an API error rather than silently fabricating success.</td></tr>
+</tbody></table>
+
+<p><strong>Why this exists:</strong> time-series models need context. A single row can be valid data but invalid as a 30-cycle model input.</p>
+</section>
+
+<section id="26">
+<h2>26. Model artifacts — what gets saved and why</h2>
+<p>When a model is trained, FleetAvail saves more than weights.</p>
+
+<table><thead><tr><th>Artifact</th><th>Why it exists</th></tr></thead><tbody>
+<tr><td><code>.joblib</code></td><td>Python/scikit-learn/XGBoost model object.</td></tr>
+<tr><td><code>.keras</code></td><td>TensorFlow/Keras model for LSTM/TCN.</td></tr>
+<tr><td><code>.json</code></td><td>Metadata: feature names, window, dataset, metrics, thresholds, provenance and scaler references.</td></tr>
+<tr><td>Scaler</td><td>Transforms live inputs exactly like training inputs.</td></tr>
+<tr><td><code>fd001_temporal_rul_comparison.json</code></td><td>Records baseline/LSTM/TCN comparison metrics used by automatic RUL selection.</td></tr>
+</tbody></table>
+
+<div class="card red">
+<p><strong>Common failure mode:</strong> model code can be perfectly correct while inference is wrong because the training-time feature order, rolling-feature construction or scaler was not reproduced. That is why the runtime uses model metadata instead of “guessing” feature columns.</p>
+</div>
+</section>
+
+<section id="27">
+<h2>27. How to read, debug and extend the codebase</h2>
+
+<h3>Reading order</h3>
+<pre>1. README.md
+2. backend/app/main.py
+3. backend/app/services/core.py
+4. ml/cmapss/runtime.py
+5. ml/health.py
+6. digital_twin/state.py
+7. decision_engine/maintenance_optimizer.py
+8. decision_engine/spares.py
+9. decision_engine/fleet_availability.py
+10. ml/cmapss/data.py
+11. ml/cmapss/features.py
+12. ml/cmapss/sequences.py
+13. ml/cmapss/model.py
+14. ml/cmapss/failure_risk.py
+15. ml/cmapss/anomaly.py
+16. ml/cmapss/temporal_rul.py
+17. ml/observability.py
+18. tests/
+19. frontend/</pre>
+
+<h3>When a prediction is wrong</h3>
+<pre>API request
+  ↓
+core.py
+  ↓
+runtime.py
+  ↓
+feature construction
+  ↓
+model artifact
+  ↓
+health fusion
+  ↓
+twin sync</pre>
+<p>Inspect the data at each boundary. Do not jump directly to the dashboard.</p>
+
+<h3>When maintenance planning is wrong</h3>
+<pre>fused aircraft state
+  ↓
+core._maintenance_candidates()
+  ↓
+maintenance_optimizer.py
+  ↓
+spares.py
+  ↓
+fleet_availability.py</pre>
+
+<h3>When the dashboard is blank</h3>
+<p>Separate these questions:</p>
+<ul>
+<li>Is FastAPI alive?</li>
+<li>Does <code>/health</code> return JSON?</li>
+<li>Does <code>frontend</code> build?</li>
+<li>Does <code>frontend/dist</code> exist?</li>
+<li>Can the browser load JS/CSS assets?</li>
+<li>Does the browser show a network error or React error?</li>
+</ul>
+
+<h3>How to add another dataset</h3>
+<p>The intended future design is:</p>
+<pre>Dataset-specific loader/preprocessor
+          ↓
+common feature contract
+          ↓
+common runtime/model contract
+          ↓
+common Health Fusion
+          ↓
+common Digital Twin + decisions
+          ↓
+common fleet application</pre>
+
+<p>That is why the project documentation keeps FD001 as the controlled reference before generalizing to FD002–FD004.</p>
+
+<h3>How to add another model</h3>
+<p>Keep the decision-layer contract stable. A new model should produce the signals the runtime/health layer expects rather than forcing every downstream consumer to understand the new model's internal details.</p>
+</section>
+
+<section id="28">
+<h2>28. Glossary — deeper definitions of the major technical terms</h2>
+
+<details open><summary>API</summary><p><strong>Application Programming Interface.</strong> A defined way for one program to request data or actions from another. FleetAvail's FastAPI routes are its HTTP API.</p></details>
+<details><summary>Async / asynchronous</summary><p>Code can wait for I/O without blocking the entire server thread in the same way a synchronous call would. The WebSocket route is asynchronous because it continuously sends events.</p></details>
+<details><summary>Artifact</summary><p>A saved output of training, such as a model file, scaler or metadata file, that is later used for inference.</p></details>
+<details><summary>Calibration</summary><p>A post-processing step that tries to make predicted probabilities better aligned with observed frequencies. Here it is implemented with a held-out logistic sigmoid/Platt model.</p></details>
+<details><summary>Classification</summary><p>Predicting a discrete class, such as 0/1. FleetAvail uses classification for failure-within-horizon risk.</p></details>
+<details><summary>Confusion between RUL and failure risk</summary><p>RUL is a remaining-time regression estimate. Failure risk is a probability for a chosen horizon. The two are related but not interchangeable.</p></details>
+<details><summary>Data leakage</summary><p>Information crosses a train/test boundary in a way that gives the model unfair knowledge. FleetAvail specifically protects against it in scaling, grouping and sequence construction.</p></details>
+<details><summary>Digital Twin</summary><p>A software state representation tied to a real-world asset. In this repo it includes state plus event history and persistence.</p></details>
+<details><summary>Drift</summary><p>A change in input or output behavior compared with a reference. FleetAvail implements simple reference-window z-score checks and rolling output-shift checks.</p></details>
+<details><summary>Feature</summary><p>A numeric input used by a model. A feature can be a raw sensor, an operating setting, a delta or a rolling statistic.</p></details>
+<details><summary>Feature engineering</summary><p>The process of transforming raw data into representations that are easier for a model to use.</p></details>
+<details><summary>Gradient boosting</summary><p>An ensemble method that builds many small decision trees sequentially, each improving on the errors of the previous ensemble. HistGradientBoosting and XGBoost are different implementations/families of this broader idea.</p></details>
+<details><summary>Horizon</summary><p>A future window. In the failure-risk model, the default horizon is 30 cycles.</p></details>
+<details><summary>HGB</summary><p>HistGradientBoosting, the baseline RUL regression model in this repository.</p></details>
+<details><summary>Isolation Forest</summary><p>An anomaly-detection method that recursively isolates observations. Observations that are easier to isolate are considered more unusual.</p></details>
+<details><summary>JSON</summary><p>A text data format commonly used for API responses, configuration and metadata.</p></details>
+<details><summary>JWT</summary><p>Not currently part of FleetAvail's core flow. This is a common web term, included here only as context: JSON Web Token is a compact signed token used for identity/authorization.</p></details>
+<details><summary>LSTM</summary><p>Long Short-Term Memory. A recurrent neural-network architecture with gates that help preserve or discard information across sequence steps.</p></details>
+<details><summary>MAE</summary><p>Mean Absolute Error: average of absolute prediction errors. Lower is better for the RUL benchmark used here.</p></details>
+<details><summary>ML inference</summary><p>Using a trained model to produce a prediction from new data.</p></details>
+<details><summary>MLOps</summary><p>Practices around operating machine-learning systems: versioning, provenance, monitoring, validation, deployment and lifecycle management. FleetAvail's Phase C is an application-level slice of this idea.</p></details>
+<details><summary>Normalization vs scaling</summary><p>Normalization here means mapping incoming telemetry into the expected C-MAPSS-shaped field structure. Scaling means numeric transformation using the fitted StandardScaler. They are different operations.</p></details>
+<details><summary>Operational state</summary><p>A business-facing state such as READY, DEGRADED, MAINTENANCE or CRITICAL. It is derived from aircraft status plus fused engine health.</p></details>
+<details><summary>p95</summary><p>The 95th percentile. It is often used to describe tail latency rather than only average latency.</p></details>
+<details><summary>Platt scaling</summary><p>A sigmoid probability calibration technique. FleetAvail implements the idea using LogisticRegression on the logit of the raw classifier probability.</p></details>
+<details><summary>Prediction provider / model contract</summary><p>An agreed interface for producing the signals the rest of the system consumes. It allows model implementations to change without rewriting every decision layer.</p></details>
+<details><summary>Regression</summary><p>Predicting a continuous numeric quantity. RUL prediction is regression.</p></details>
+<details><summary>RUL</summary><p>Remaining Useful Life. The estimated number of remaining operating cycles.</p></details>
+<details><summary>Scaler</summary><p>An object fitted on training data that transforms raw feature magnitudes into the representation expected by the trained model.</p></details>
+<details><summary>Sequence</summary><p>A time-ordered collection of observations. FleetAvail's core runtime window is 30 cycles.</p></details>
+<details><summary>TCN</summary><p>Temporal Convolutional Network. A sequence model based on causal convolutions rather than recurrent state.</p></details>
+<details><summary>Telemetry</summary><p>Measurements from a physical or simulated system captured over time.</p></details>
+<details><summary>Threshold</summary><p>A cutoff used to convert a continuous value into an operational decision. Health levels and anomaly/failure decisions use thresholds.</p></details>
+<details><summary>Time series</summary><p>Data whose order in time matters. Engine degradation is a time-series problem because current behavior depends on past behavior.</p></details>
+<details><summary>Train / calibration / test</summary><p>Different data roles. Training fits model parameters; calibration adjusts probability behavior; test/holdout data measures performance on unseen trajectories.</p></details>
+<details><summary>Validation vs verification</summary><p>Validation asks “does the system solve the intended problem?” Verification asks “does the implementation behave according to its contract?” The repo contains both kinds of evidence, although it remains a prototype.</p></details>
+<details><summary>WebSocket</summary><p>A persistent bidirectional connection. Instead of repeatedly making new HTTP requests, the browser can keep one connection open and receive streaming updates.</p></details>
+<details><summary>z-score</summary><p>A standardized distance from a reference mean: roughly (value − mean) / standard deviation. FleetAvail uses an absolute z-score threshold for simple drift detection.</p></details>
+</section>
+
+<section id="29">
+<h2>29. Current repository state and what remains to prove</h2>
+<div class="grid2">
+<div class="kpi"><div class="k">Automated local result</div><div class="n">58 passed</div><div class="small">1 skipped, 1 warning in the captured local run.</div></div>
+<div class="kpi"><div class="k">Focused health result</div><div class="n">9 passed</div><div class="small">Health + formal health-fusion tests.</div></div>
+</div>
+
+<h3>What the local manual verification already demonstrated</h3>
+<p>The captured testing report in the repository records successful checks for health, fleet summary, aircraft list/detail, digital-twin snapshots, prediction, what-if, maintenance recommendation, spare inventory, fleet availability and maintenance execution.</p>
+
+<h3>What is not equivalent to “full ML validation”</h3>
+<p>The captured <code>/api/predict</code> call was performed in <strong>cold-start</strong> mode with one sample available. That proves the telemetry-ingestion and cold-start contract, but it does not prove ready-window inference using real trained FD001 artifacts.</p>
+
+<h3>The next important validation</h3>
+<pre>1. Place official FD001 train/test/RUL_test files locally.
+2. Train or obtain the intended model artifacts.
+3. Confirm /api/models reports the expected branches.
+4. Feed at least 30 valid sequential engine cycles.
+5. Confirm window_ready=true.
+6. Confirm non-empty RUL/failure/anomaly outputs.
+7. Compare API outputs with offline script outputs.
+8. Exercise the full decision chain again.
+9. Run the complete pytest suite again.</pre>
+
+<div class="card amber">
+<p><strong>Documentation consistency note:</strong> <code>docs/phase-a.md</code> and the current runtime code describe automatic RUL selection from the benchmark comparison, with the baseline currently selected because it has the lowest recorded FD001 test MAE. One older <code>docs/runtime-data-flow.md</code> passage mentions a temporal-model default; the current <code>FleetService</code>/<code>CMapssModelRuntime</code> code uses <code>FLEETAVAIL_RUL_MODEL=auto</code>. When reading this repo, treat the current runtime code and its tests as the execution source of truth.</p>
+</div>
+
+<h3>Related project pages</h3>
+<p><a href="../">FleetAvail project root</a> · <a href="../fleetavail/testing/">Testing & Verification Report</a> · <a href="https://github.com/dis-craft/FleetAvail">GitHub repository</a></p>
+</section>
+
+<div class="footer">
+<p>FleetAvail learning guide. Written directly from the repository structure, implementation files and project documentation. Paths referenced throughout the guide are repository-relative so you can jump from concept → code → test.</p>
+<p><a href="#top">Back to top ↑</a></p>
+</div>
+
+</main>
+</div>
+</div>
+</body>
+</html>
